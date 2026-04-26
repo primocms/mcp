@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "page-type-config.schema.json",
+  "title": "Primo page type config.yaml",
+  "description": "Schema for page-types/{name}/config.yaml.",
+  "type": "object",
+  "required": [
+    "name"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "System-owned page type ID. Keep existing IDs stable; omit this when creating a new page type."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "icon": {
+      "type": "string"
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "description": "Hex color (e.g. #2B407D) used by the editor UI to badge this page type."
+    },
+    "allowed_blocks": {
+      "type": "array",
+      "description": "Block folder names offered by the editor's add-block picker. Omit or leave empty for a static page type whose layout is fully defined by layout.yaml.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Block folder name."
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "$ref": "field.schema.json#/$defs/field"
+      },
+      "default": []
+    }
+  },
+  "additionalProperties": false
+}

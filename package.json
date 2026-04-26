@@ -1,0 +1,41 @@
+{
+	"name": "@primo/mcp",
+	"version": "0.1.0",
+	"description": "Official Primo MCP server for live, versioned docs and validation in exported Primo sites.",
+	"type": "module",
+	"main": "./dist/index.js",
+	"exports": {
+		".": "./dist/index.js"
+	},
+	"bin": {
+		"primo-mcp": "./dist/index.js"
+	},
+	"files": [
+		"dist",
+		"src/reference/**/*.md",
+		"src/schemas/**/*.json"
+	],
+	"scripts": {
+		"build": "node scripts/sync-field-types.mjs && tsc && node scripts/copy-reference.mjs",
+		"smoke": "node scripts/smoke-tests.mjs",
+		"prepack": "npm run build"
+	},
+	"engines": {
+		"node": ">=18.18"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.29.0",
+		"ajv": "^8.20.0",
+		"esbuild": "^0.28.0",
+		"js-yaml": "^4.1.1",
+		"markdown-it": "^14.1.1",
+		"postcss": "^8.5.12",
+		"postcss-nested": "^7.0.2",
+		"svelte": "^5.55.5"
+	},
+	"devDependencies": {
+		"@types/markdown-it": "^14.1.2",
+		"@types/node": "^25.6.0",
+		"typescript": "^6.0.3"
+	}
+}

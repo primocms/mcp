@@ -1,0 +1,593 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "field.schema.json",
+  "title": "Primo field definition",
+  "description": "A single field entry used in blocks/{name}/fields.yaml, page-types/{name}/config.yaml fields, and site/fields.yaml.",
+  "$ref": "#/$defs/field",
+  "$defs": {
+    "fieldName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "description": "A stable field key. Field names are used as Svelte identifiers, so use letters, numbers, and underscores."
+    },
+    "systemId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "System-owned ID. Keep existing IDs stable; omit this when creating a new field."
+    },
+    "fieldType": {
+      "type": "string",
+      "enum": [
+        "repeater",
+        "group",
+        "text",
+        "rich-text",
+        "markdown",
+        "link",
+        "image",
+        "icon",
+        "url",
+        "page-field",
+        "site-field",
+        "page",
+        "page-list",
+        "number",
+        "date",
+        "slider",
+        "switch",
+        "select",
+        "info"
+      ]
+    },
+    "condition": {
+      "type": "object",
+      "required": [
+        "field",
+        "comparison",
+        "value"
+      ],
+      "properties": {
+        "field": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The field ID this condition compares against."
+        },
+        "comparison": {
+          "type": "string",
+          "enum": [
+            "=",
+            "!="
+          ]
+        },
+        "value": {
+          "description": "The value to compare against."
+        }
+      },
+      "additionalProperties": false
+    },
+    "baseConfig": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "condition": {
+          "$ref": "#/$defs/condition"
+        }
+      },
+      "additionalProperties": false
+    },
+    "imageConfig": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "maxSizeMB": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "maxWidthOrHeight": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "condition": {
+          "$ref": "#/$defs/condition"
+        }
+      },
+      "additionalProperties": false
+    },
+    "numberConfig": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "step": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "condition": {
+          "$ref": "#/$defs/condition"
+        }
+      },
+      "additionalProperties": false
+    },
+    "selectOption": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": [
+            "value",
+            "label"
+          ],
+          "properties": {
+            "value": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "icon": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "selectConfig": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selectOption"
+          },
+          "description": "Canonical select choices. Object entries may include Iconify icon names."
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Legacy select choices accepted for compatibility."
+        },
+        "condition": {
+          "$ref": "#/$defs/condition"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pageReferenceConfig": {
+      "type": "object",
+      "required": [
+        "page_type"
+      ],
+      "properties": {
+        "page_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Page type folder name or page type display name."
+        },
+        "condition": {
+          "$ref": "#/$defs/condition"
+        }
+      },
+      "additionalProperties": false
+    },
+    "fieldReferenceConfig": {
+      "type": "object",
+      "required": [
+        "field"
+      ],
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Referenced page or site field name in exported files."
+        },
+        "condition": {
+          "$ref": "#/$defs/condition"
+        }
+      },
+      "additionalProperties": false
+    },
+    "infoConfig": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "info": {
+          "type": "string",
+          "description": "Markdown text shown only in the editor."
+        },
+        "condition": {
+          "$ref": "#/$defs/condition"
+        }
+      },
+      "additionalProperties": false
+    },
+    "field": {
+      "type": "object",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "_id": {
+          "$ref": "#/$defs/systemId"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "type": {
+          "$ref": "#/$defs/fieldType"
+        },
+        "subfields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "description": "Nested fields for group and repeater fields."
+        },
+        "config": {
+          "description": "Canonical field configuration. Exported files use config."
+        },
+        "options": {
+          "description": "Legacy alias for config accepted by import."
+        },
+        "parent": {
+          "$ref": "#/$defs/fieldName",
+          "description": "Legacy flat subfield parent name. Prefer nested subfields."
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "help": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "text",
+                  "rich-text",
+                  "markdown",
+                  "link",
+                  "icon",
+                  "url",
+                  "switch",
+                  "date"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/baseConfig"
+              },
+              "options": {
+                "$ref": "#/$defs/baseConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "group",
+                  "repeater"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/baseConfig"
+              },
+              "options": {
+                "$ref": "#/$defs/baseConfig"
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "subfields"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "image"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/imageConfig"
+              },
+              "options": {
+                "$ref": "#/$defs/imageConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "number",
+                  "slider"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/numberConfig"
+              },
+              "options": {
+                "$ref": "#/$defs/numberConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "select"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/selectConfig"
+              },
+              "options": {
+                "$ref": "#/$defs/selectConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "page",
+                  "page-list"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "config"
+                ]
+              },
+              {
+                "required": [
+                  "options"
+                ]
+              }
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/pageReferenceConfig"
+              },
+              "options": {
+                "$ref": "#/$defs/pageReferenceConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "page-field",
+                  "site-field"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "config"
+                ]
+              },
+              {
+                "required": [
+                  "options"
+                ]
+              }
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/fieldReferenceConfig"
+              },
+              "options": {
+                "$ref": "#/$defs/fieldReferenceConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "info"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/infoConfig"
+              },
+              "options": {
+                "$ref": "#/$defs/infoConfig"
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "imageValue": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "alt": {
+          "type": "string"
+        },
+        "width": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "height": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "upload": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "linkValue": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "page": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "contentObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/contentValue"
+      }
+    },
+    "contentValue": {
+      "description": "Broad YAML content value. Field-specific validation is handled by MCP validators using the corresponding field definitions.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/imageValue"
+        },
+        {
+          "$ref": "#/$defs/linkValue"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/contentValue"
+          }
+        },
+        {
+          "$ref": "#/$defs/contentObject"
+        }
+      ]
+    }
+  }
+}

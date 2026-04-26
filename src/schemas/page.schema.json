@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "page.schema.json",
+  "title": "Primo page YAML",
+  "description": "Schema for pages/**/*.yaml.",
+  "type": "object",
+  "required": [
+    "name",
+    "page_type"
+  ],
+  "properties": {
+    "_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "System-owned page ID. Keep existing IDs stable; omit this when creating a new page."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "slug": {
+      "type": "string",
+      "description": "Exported page slug. On import, the slug is derived from the page file path."
+    },
+    "page_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Page type folder name or display name."
+    },
+    "fields": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "field.schema.json#/$defs/fieldName"
+      },
+      "additionalProperties": {
+        "$ref": "field.schema.json#/$defs/contentValue"
+      },
+      "default": {}
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/pageSection"
+      },
+      "default": []
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "pageSection": {
+      "type": "object",
+      "required": [
+        "block"
+      ],
+      "properties": {
+        "_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "System-owned section ID. Keep existing IDs stable; omit this when creating a new section."
+        },
+        "block": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Block folder name or block display name."
+        },
+        "content": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "field.schema.json#/$defs/fieldName"
+          },
+          "additionalProperties": {
+            "$ref": "field.schema.json#/$defs/contentValue"
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
