@@ -14,7 +14,7 @@ const { compile } = svelteCompiler;
 const require = createRequire(import.meta.url);
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-const PALA_BASELINE_CSS = `
+const PRIMO_BASELINE_CSS = `
   :root {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     line-height: 1.5;
@@ -389,7 +389,7 @@ async function compilePages(graph: SiteGraph, tempDir: string): Promise<Array<{ 
 		};
 
 		const head = {
-			code: `<style data-pala-baseline>${PALA_BASELINE_CSS}</style>${graph.site.head ?? ""}${pageType.head ?? ""}`,
+			code: `<style data-primo-baseline>${PRIMO_BASELINE_CSS}</style>${graph.site.head ?? ""}${pageType.head ?? ""}`,
 			data: siteData
 		};
 		const headWithoutCode = {
