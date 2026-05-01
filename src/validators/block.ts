@@ -67,6 +67,21 @@ export function validateBlock(input: ValidateBlockInput): ValidationResult {
 	return resultFromErrors(errors);
 }
 
+// Field types whose values are meant to be inline-editable in the rendered
+// page. Matches the list documented in inline-editing.md. Container types
+// (repeater, group) and server-resolved types (page, page-list, etc.) don't
+// inline-edit themselves; subfields of containers are checked recursively.
+const inlineEditableFieldTypes = new Set<string>([
+	"text",
+	"rich-text",
+	"markdown",
+	"link",
+	"image",
+	"icon",
+	"url",
+	"number"
+]);
+
 function validateBlockCrossFileReferences(
 	blockName: string,
 	component: string,
@@ -75,6 +90,7 @@ function validateBlockCrossFileReferences(
 	const errors: ValidationError[] = [];
 	const topLevelNames = topLevelFieldNames(fields);
 	const dataKeyNames = editableDataKeyNames(fields);
+	const dataKeysInComponent = new Set(extractDataKeyReferences(component).map(ref => ref.name));
 
 	for (const fieldName of topLevelNames) {
 		if (!containsIdentifier(component, fieldName)) {
@@ -110,7 +126,32 @@ function validateBlockCrossFileReferences(
 		}
 	}
 
+	for (const field of iterateInlineEditableFields(fields)) {
+		if (!dataKeysInComponent.has(field.name) && containsIdentifier(component, field.name)) {
+			errors.push({
+				file: "component.svelte",
+				severity: "warning",
+				message: `Field "${field.name}" (${field.type}) is referenced but has no matching data-key="${field.name}" in component.svelte. Inline click-to-edit won't work.`,
+				fix_hint: `Add data-key="${field.name}" to the element bound to ${field.name}, e.g. <h1 data-key="${field.name}">{${field.name}}</h1>.`
+			});
+		}
+	}
+
 	return errors;
+}
+
+function* iterateInlineEditableFields(
+	fields: ReturnType<typeof fieldDefinitionsFromDocument>
+): Generator<{ name: string; type: string }> {
+	for (const field of fields) {
+		if (field.type === "group" || field.type === "repeater") {
+			yield* iterateInlineEditableFields(field.subfields ?? []);
+			continue;
+		}
+		if (inlineEditableFieldTypes.has(field.type)) {
+			yield { name: field.name, type: field.type };
+		}
+	}
 }
 
 function containsIdentifier(source: string, identifier: string): boolean {
