@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "block-config.schema.json",
+  "title": "Primo block config.yaml",
+  "description": "Schema for blocks/{name}/config.yaml. Holds the block's stable system ID and display label. Reserved for future block-level metadata (description, icon, category, etc.).",
+  "type": "object",
+  "required": [
+    "name"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional editor IntelliSense pointer. Ignored by import."
+    },
+    "_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "System-owned block ID. Keep existing IDs stable; omit this when creating a new block."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable block name shown in the editor. Editing this does not rename the folder or move references."
+    }
+  },
+  "additionalProperties": false
+}

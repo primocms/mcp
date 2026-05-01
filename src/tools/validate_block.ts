@@ -5,7 +5,7 @@ import { requireRecord, requireString, validationOutputSchema } from "./validati
 export const validateBlockTool = {
 	name: "validate_block",
 	description:
-		"Validate a Primo block's component.svelte, fields.yaml, and optional content.yaml for schema, cross-file consistency, and Svelte 5 syntax.",
+		"Validate a Primo block's component.svelte, config.yaml, fields.yaml, and content.yaml for schema, cross-file consistency, and Svelte 5 syntax. All four files are required — content.yaml seeds the editor sidebar preview and must always exist alongside the block.",
 	inputSchema: {
 		type: "object",
 		properties: {
@@ -17,16 +17,20 @@ export const validateBlockTool = {
 				type: "string",
 				description: "Full contents of blocks/{name}/component.svelte."
 			},
+			config_yaml: {
+				type: "string",
+				description: "Full contents of blocks/{name}/config.yaml (holds _id and display name)."
+			},
 			fields_yaml: {
 				type: "string",
-				description: "Full contents of blocks/{name}/fields.yaml."
+				description: "Full contents of blocks/{name}/fields.yaml (bare top-level list of field definitions)."
 			},
 			content_yaml: {
 				type: "string",
-				description: "Optional full contents of blocks/{name}/content.yaml."
+				description: "Full contents of blocks/{name}/content.yaml (default values for the editor sidebar)."
 			}
 		},
-		required: ["name", "component_svelte", "fields_yaml"],
+		required: ["name", "component_svelte", "config_yaml", "fields_yaml", "content_yaml"],
 		additionalProperties: false
 	},
 	outputSchema: validationOutputSchema
@@ -38,16 +42,12 @@ export function validateBlock(input: ValidateBlockInput): ValidationResult {
 
 export function readValidateBlockInput(args: unknown): ValidateBlockInput {
 	const record = requireRecord(args, validateBlockTool.name);
-	const contentYaml = record.content_yaml;
-
-	if (contentYaml !== undefined && typeof contentYaml !== "string") {
-		throw new TypeError('validate_block optional argument "content_yaml" must be a string when provided.');
-	}
 
 	return {
 		name: requireString(record, "name", validateBlockTool.name),
 		component_svelte: requireString(record, "component_svelte", validateBlockTool.name),
+		config_yaml: requireString(record, "config_yaml", validateBlockTool.name),
 		fields_yaml: requireString(record, "fields_yaml", validateBlockTool.name),
-		content_yaml: contentYaml
+		content_yaml: requireString(record, "content_yaml", validateBlockTool.name)
 	};
 }

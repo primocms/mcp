@@ -12,26 +12,30 @@ Rendered page content comes from the section `content:` in `pages/*.yaml`, not f
 
 ## Page Types
 
-`page-types/{name}/config.yaml` defines a page template.
+`page-types/{name}/config.yaml` defines page-type metadata and block availability.
 
 ```yaml
-id: pt_blog_post
+_id: pt_blog_post
 name: Blog Post
 icon: lucide:file-text
 color: '#2563eb'
 allowed_blocks:
   - hero
   - body
-fields:
-  - name: title
-    label: Title
-    type: text
-  - name: hero_image
-    label: Hero Image
-    type: image
-  - name: published_at
-    label: Published
-    type: date
+```
+
+Page-level field definitions live in `page-types/{name}/fields.yaml` as a bare list:
+
+```yaml
+- name: title
+  label: Title
+  type: text
+- name: hero_image
+  label: Hero Image
+  type: image
+- name: published_at
+  label: Published
+  type: date
 ```
 
 `allowed_blocks` is the list of block folder names offered by the editor's add-block picker for pages of this type.
@@ -59,7 +63,7 @@ footer:
 
 Page fields are content that belongs to the page, not to a block. Common uses are SEO title, SEO description, hero image, post date, author, and featured flags.
 
-- Define page fields once in `page-types/{name}/config.yaml` under `fields:`.
+- Define page fields once in `page-types/{name}/fields.yaml`.
 - Populate them per page via the top-level `fields:` key in `pages/*.yaml`.
 - Read them in a block with a `page-field` field whose `config.field` points to the page field name.
 
@@ -79,13 +83,11 @@ sections: []
 
 ```yaml
 # blocks/hero/fields.yaml
-name: Hero
-fields:
-  - name: hero_image
-    label: Hero Image (from page)
-    type: page-field
-    config:
-      field: hero_image
+- name: hero_image
+  label: Hero Image (from page)
+  type: page-field
+  config:
+    field: hero_image
 ```
 
 ## Pages

@@ -37,11 +37,19 @@ const knownFieldTypes = new Set<string>([
 const serverResolvedFieldTypes = new Set<string>(["page", "page-list", "page-field", "site-field", "info"]);
 
 export function fieldDefinitionsFromDocument(document: unknown): FieldDefinition[] {
-	if (!isPlainObject(document) || !Array.isArray(document.fields)) {
-		return [];
+	// Block, page-type, and site fields.yaml files are bare top-level lists
+	// of field definitions. Accept either a list or (for forward-compat with
+	// callers passing a parsed wrapper object) an object exposing a `fields`
+	// array.
+	if (Array.isArray(document)) {
+		return normalizeFieldDefinitions(document);
 	}
 
-	return normalizeFieldDefinitions(document.fields);
+	if (isPlainObject(document) && Array.isArray(document.fields)) {
+		return normalizeFieldDefinitions(document.fields);
+	}
+
+	return [];
 }
 
 export function normalizeFieldDefinitions(value: unknown): FieldDefinition[] {

@@ -50,7 +50,6 @@ type ScaffoldBlockInput = {
 	name: string;
 	display_name?: string;
 	fields: FieldInput[];
-	with_content_yaml: boolean;
 };
 
 type ScaffoldPageTypeInput = {
@@ -83,6 +82,17 @@ const fieldTypes = [
 	"select",
 	"info"
 ] as const;
+
+// Comment-only layout.yaml emitted for new page types. Shows the schema
+// inline so agents/humans see what's possible without it being live config.
+const emptyLayoutTemplate = `# Sections shared by every page of this type. Add blocks here to render
+# the same header/footer across all pages of this type.
+#
+# header:
+#   - block: site-header
+# footer:
+#   - block: site-footer
+`;
 
 const fieldTypeSchema = {
 	type: "string",
@@ -159,25 +169,21 @@ const serverResolvedFieldTypes = new Set(["page-field", "site-field", "page", "p
 export const scaffoldBlockTool = {
 	name: "scaffold_block",
 	description:
-		"Generate ready-to-write component.svelte, fields.yaml, and optional content.yaml files for a new Primo block. The generated files are validated before they are returned.",
+		"Generate ready-to-write component.svelte, config.yaml, fields.yaml, and content.yaml files for a new Primo block. All four files are emitted; content.yaml seeds the editor sidebar preview and is required for every block.",
 	inputSchema: {
 		type: "object",
 		properties: {
 			name: {
 				type: "string",
-				description: 'Block folder name, e.g. "pricing-table".'
+				description: 'Block folder name, e.g. "pricing-table". This is the stable key referenced by pages and page-type allowed_blocks; renaming the folder breaks references.'
 			},
 			display_name: {
 				type: "string",
-				description: "Human-readable block name. Defaults to a titleized version of name."
+				description: "Human-readable block name (config.yaml `name`). Defaults to a titleized version of name."
 			},
 			fields: {
 				type: "array",
 				items: blockFieldInputSchema
-			},
-			with_content_yaml: {
-				type: "boolean",
-				description: "Whether to include blocks/{name}/content.yaml. Defaults to true."
 			}
 		},
 		required: ["name", "fields"],
@@ -189,13 +195,13 @@ export const scaffoldBlockTool = {
 export const scaffoldPageTypeTool = {
 	name: "scaffold_page_type",
 	description:
-		"Generate a ready-to-write page-types/{name}/config.yaml file for a new Primo page type. The generated config is validated before it is returned.",
+		"Generate ready-to-write page-types/{name}/config.yaml + page-types/{name}/fields.yaml + page-types/{name}/layout.yaml files for a new Primo page type. config.yaml holds the page type's editor metadata; fields.yaml is a bare list of page-level fields (the same shape as block fields.yaml and site/fields.yaml); layout.yaml is a comment-only stub that documents how to add shared header/footer sections.",
 	inputSchema: {
 		type: "object",
 		properties: {
 			name: {
 				type: "string",
-				description: "Page type folder name."
+				description: "Page type folder name. This is the stable key — renaming the folder breaks page references."
 			},
 			display_name: {
 				type: "string",
@@ -229,10 +235,10 @@ export const scaffoldPageTypeTool = {
 export function scaffoldBlock(input: ScaffoldBlockInput): ScaffoldResult {
 	const displayName = input.display_name?.trim() || titleize(input.name);
 	const fields = input.fields.map(normalizeField);
-	const fieldsYaml = dumpYaml({
-		name: displayName,
-		fields
-	});
+	const configYaml = dumpYaml({ name: displayName });
+	const fieldsYaml = fields.length > 0 ? dumpYaml(fields) : "[]\n";
+	const seededContent = seedContent(fields);
+	const contentYaml = Object.keys(seededContent).length > 0 ? dumpYaml(seededContent) : "{}\n";
 	const componentSvelte = renderBlockComponent(fields);
 
 	const files: ScaffoldFile[] = [
@@ -241,23 +247,23 @@ export function scaffoldBlock(input: ScaffoldBlockInput): ScaffoldResult {
 			contents: componentSvelte
 		},
 		{
+			path: `blocks/${input.name}/config.yaml`,
+			contents: configYaml
+		},
+		{
 			path: `blocks/${input.name}/fields.yaml`,
 			contents: fieldsYaml
-		}
-	];
-
-	let contentYaml: string | undefined;
-	if (input.with_content_yaml) {
-		contentYaml = dumpYaml(seedContent(fields));
-		files.push({
+		},
+		{
 			path: `blocks/${input.name}/content.yaml`,
 			contents: contentYaml
-		});
-	}
+		}
+	];
 
 	const validation = runValidateBlock({
 		name: input.name,
 		component_svelte: componentSvelte,
+		config_yaml: configYaml,
 		fields_yaml: fieldsYaml,
 		content_yaml: contentYaml
 	});
@@ -286,34 +292,52 @@ export function scaffoldPageType(input: ScaffoldPageTypeInput): ScaffoldResult {
 
 	config.allowed_blocks = input.allowed_blocks;
 
-	if (fields.length > 0) {
-		config.fields = fields;
-	}
-
 	let configYaml = dumpYaml(config);
-	if (input.allowed_blocks.length === 0 && fields.length === 0) {
+	if (input.allowed_blocks.length === 0) {
 		configYaml = configYaml.replace(
 			/^allowed_blocks:/m,
 			"# Empty allowed_blocks makes this a static page type.\nallowed_blocks:"
 		);
 	}
 
-	const file = `page-types/${input.name}/config.yaml`;
-	const parsed = parseYamlDocument(configYaml, file);
-	if (!parsed.ok) {
-		return resultFromErrors([parsed.error]);
+	const fieldsYaml = fields.length > 0 ? dumpYaml(fields) : "[]\n";
+
+	const configPath = `page-types/${input.name}/config.yaml`;
+	const fieldsPath = `page-types/${input.name}/fields.yaml`;
+
+	const parsedConfig = parseYamlDocument(configYaml, configPath);
+	if (!parsedConfig.ok) {
+		return resultFromErrors([parsedConfig.error]);
 	}
 
-	const schemaErrors = validateJsonSchema("page-type-config", parsed.value, file);
-	if (schemaErrors.length > 0) {
-		return resultFromErrors(schemaErrors);
+	const configErrors = validateJsonSchema("page-type-config", parsedConfig.value, configPath);
+	if (configErrors.length > 0) {
+		return resultFromErrors(configErrors);
+	}
+
+	const parsedFields = parseYamlDocument(fieldsYaml, fieldsPath);
+	if (!parsedFields.ok) {
+		return resultFromErrors([parsedFields.error]);
+	}
+
+	const fieldsErrors = validateJsonSchema("page-type-fields", parsedFields.value, fieldsPath);
+	if (fieldsErrors.length > 0) {
+		return resultFromErrors(fieldsErrors);
 	}
 
 	return {
 		files: [
 			{
-				path: file,
+				path: configPath,
 				contents: configYaml
+			},
+			{
+				path: fieldsPath,
+				contents: fieldsYaml
+			},
+			{
+				path: `page-types/${input.name}/layout.yaml`,
+				contents: emptyLayoutTemplate
 			}
 		]
 	};
@@ -326,16 +350,11 @@ export function readScaffoldBlockInput(args: unknown): ScaffoldBlockInput {
 
 	const displayName = readOptionalString(record, "display_name", scaffoldBlockTool.name);
 	const fields = readFieldArray(record.fields, "scaffold_block fields", true);
-	const withContentYaml =
-		record.with_content_yaml === undefined
-			? true
-			: readBoolean(record.with_content_yaml, "scaffold_block with_content_yaml");
 
 	return {
 		name,
 		display_name: displayName,
-		fields,
-		with_content_yaml: withContentYaml
+		fields
 	};
 }
 
@@ -597,13 +616,6 @@ function readOptionalString(record: Record<string, unknown>, key: string, toolNa
 	}
 	if (typeof value !== "string") {
 		throw new TypeError(`${toolName} optional argument "${key}" must be a string when provided.`);
-	}
-	return value;
-}
-
-function readBoolean(value: unknown, label: string): boolean {
-	if (typeof value !== "boolean") {
-		throw new TypeError(`${label} must be a boolean.`);
 	}
 	return value;
 }

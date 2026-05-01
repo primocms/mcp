@@ -30,7 +30,9 @@ function readBlock(name) {
 	return {
 		name,
 		component_svelte: readFileSync(join(blockRoot, "component.svelte"), "utf8"),
-		fields_yaml: readFileSync(join(blockRoot, "fields.yaml"), "utf8")
+		config_yaml: readFileSync(join(blockRoot, "config.yaml"), "utf8"),
+		fields_yaml: readFileSync(join(blockRoot, "fields.yaml"), "utf8"),
+		content_yaml: readFileSync(join(blockRoot, "content.yaml"), "utf8")
 	};
 }
 
@@ -96,6 +98,7 @@ try {
 				page_path: "pages/index.yaml",
 				page_yaml: readFileSync(join(siteRoot, "pages", "index.yaml"), "utf8"),
 				page_type_yaml: readFileSync(join(siteRoot, "page-types", "default", "config.yaml"), "utf8"),
+				page_type_fields_yaml: readFileSync(join(siteRoot, "page-types", "default", "fields.yaml"), "utf8"),
 				available_blocks: availableBlocks()
 			}
 		})
@@ -108,17 +111,17 @@ try {
 			name: "validate_block",
 			arguments: {
 				name: "broken",
-				fields_yaml: `name: Broken
-fields:
-  - name: headline
-    type: text
-  - name: cta
-    type: link
-  - name: target
-    type: page-field
-    config: {}
-  - name: mystery
-    type: unknown-type
+				config_yaml: `name: Broken
+`,
+				fields_yaml: `- name: headline
+  type: text
+- name: cta
+  type: link
+- name: target
+  type: page-field
+  config: {}
+- name: mystery
+  type: unknown-type
 `,
 				content_yaml: `cta: /book
 extra: not defined
@@ -149,9 +152,9 @@ extra: not defined
 				page_type_yaml: `name: Blog Post
 allowed_blocks:
   - hero
-fields:
-  - name: seo_title
-    type: text
+`,
+				page_type_fields_yaml: `- name: seo_title
+  type: text
 `,
 				page_yaml: `name: Broken
 page_type: wrong-type
@@ -168,10 +171,8 @@ sections:
 				available_blocks: [
 					{
 						name: "hero",
-						fields_yaml: `name: Hero
-fields:
-  - name: cta
-    type: link
+						fields_yaml: `- name: cta
+  type: link
 `
 					}
 				]
@@ -227,6 +228,7 @@ fields:
 			arguments: {
 				name: "pricing-table",
 				component_svelte: scaffoldedBlockFiles.get("blocks/pricing-table/component.svelte"),
+				config_yaml: scaffoldedBlockFiles.get("blocks/pricing-table/config.yaml"),
 				fields_yaml: scaffoldedBlockFiles.get("blocks/pricing-table/fields.yaml"),
 				content_yaml: scaffoldedBlockFiles.get("blocks/pricing-table/content.yaml")
 			}

@@ -2,13 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "page-type-config.schema.json",
   "title": "Primo page type config.yaml",
-  "description": "Schema for page-types/{name}/config.yaml.",
+  "description": "Schema for page-types/{name}/config.yaml. Page-level field definitions live in a sibling fields.yaml.",
   "type": "object",
   "required": [
     "name"
   ],
   "properties": {
-    "id": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional editor IntelliSense pointer. Ignored by import."
+    },
+    "_id": {
       "type": "string",
       "minLength": 1,
       "description": "System-owned page type ID. Keep existing IDs stable; omit this when creating a new page type."
@@ -34,13 +38,6 @@
         "description": "Block folder name."
       },
       "uniqueItems": true,
-      "default": []
-    },
-    "fields": {
-      "type": "array",
-      "items": {
-        "$ref": "field.schema.json#/$defs/field"
-      },
       "default": []
     }
   },

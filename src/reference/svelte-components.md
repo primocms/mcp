@@ -10,16 +10,17 @@ If the official Svelte MCP server (`mcp__svelte__*`) is available, prefer it for
 - Use `$derived()` for computed values.
 - Use `$effect()` for side effects.
 - Use `onclick={handler}`, not `on:click={handler}`.
-- Field props are auto-injected from `fields.yaml`; do not redeclare them with `$props()`.
+- Declare field props with `$props()` before using them in the template.
 
 ```svelte
 <script>
+  let { headline = '' } = $props()
   let count = $state(0)
   let doubled = $derived(count * 2)
 </script>
 
 <button onclick={() => count += 1}>
-  Count {count}, doubled {doubled}
+  {headline}: count {count}, doubled {doubled}
 </button>
 ```
 

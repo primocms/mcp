@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "field.schema.json",
   "title": "Primo field definition",
-  "description": "A single field entry used in blocks/{name}/fields.yaml, page-types/{name}/config.yaml fields, and site/fields.yaml.",
+  "description": "A single field entry used in blocks/{name}/fields.yaml, page-types/{name}/fields.yaml, and site/fields.yaml.",
   "$ref": "#/$defs/field",
   "$defs": {
     "fieldName": {

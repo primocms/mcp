@@ -1,19 +1,37 @@
 # Blocks
 
-Each block is a folder in `blocks/` with a Svelte component and field definitions.
+Each block is a folder in `blocks/` with four files:
 
 ```text
 blocks/hero/
+  config.yaml      # _id (system-stamped) + display name
+  fields.yaml      # bare list of field definitions
+  content.yaml     # default values shown in the editor sidebar (required)
   component.svelte
-  fields.yaml
-  content.yaml
 ```
+
+The folder name (`hero` here) is the block's stable key — it's what `pages/*.yaml` sections and page-type `allowed_blocks` reference. Renaming the folder breaks references; editing `name` in `config.yaml` only changes the display label in the editor.
+
+## config.yaml
+
+Holds the system-stamped `_id` and the human-readable name shown in the editor sidebar.
+
+```yaml
+_id: 8a1q3pf2nv0xkrm
+name: Hero
+```
+
+`_id` is generated and written back by the dev server on first sync. Omit it when scaffolding a new block; keep it stable thereafter.
 
 ## component.svelte
 
-Props are auto-injected from `fields.yaml`. Do not declare `$props()` for Primo field props; use the field names directly in the template.
+Declare the block's editable fields with Svelte 5 `$props()` so runtime data is available to the template.
 
 ```svelte
+<script>
+  let { headline = '', image = {} } = $props()
+</script>
+
 <h1 data-key="headline">{headline}</h1>
 
 {#if image?.url}
@@ -29,24 +47,22 @@ Props are auto-injected from `fields.yaml`. Do not declare `$props()` for Primo 
 
 ## fields.yaml
 
-`fields.yaml` declares the editable props for the block.
+A **bare top-level list** of field definitions — no wrapper object.
 
 ```yaml
-name: Hero
-fields:
-  - name: headline
-    label: Headline
-    type: text
-  - name: image
-    label: Image
-    type: image
+- name: headline
+  label: Headline
+  type: text
+- name: image
+  label: Image
+  type: image
 ```
 
-Field IDs are optional. Keep existing `_id` values when editing existing fields, but omit `_id` on new fields.
+Field IDs (`_id`) are optional. Keep existing `_id` values when editing existing fields, but omit `_id` on new fields.
 
 ## content.yaml
 
-`content.yaml` stores block defaults only. It supplies values shown in the block editor sidebar and seeds the initial `content:` when the block is first added to a page.
+`content.yaml` stores block defaults. It supplies the values shown in the block editor sidebar preview, and seeds the initial `content:` when the block is first added to a page. **It's required for every block** — without it, the editor sidebar shows empty/broken previews. If there are no defaults yet, write `{}`.
 
 ```yaml
 headline: A better way to build
@@ -62,18 +78,16 @@ image:
 Use `subfields` for `group` and `repeater` fields.
 
 ```yaml
-name: Feature Grid
-fields:
-  - name: features
-    label: Features
-    type: repeater
-    subfields:
-      - name: title
-        label: Title
-        type: text
-      - name: description
-        label: Description
-        type: text
+- name: features
+  label: Features
+  type: repeater
+  subfields:
+    - name: title
+      label: Title
+      type: text
+    - name: description
+      label: Description
+      type: text
 ```
 
 ```svelte

@@ -9,6 +9,12 @@ Field definitions use this shape:
   config: {}
 ```
 
+These entries appear inside three files, all of which are **bare top-level lists** of field definitions (no wrapper object):
+
+- `blocks/{name}/fields.yaml` — block field schema
+- `page-types/{name}/fields.yaml` — page-level fields (e.g. `seo_title`, `og_image`)
+- `site/fields.yaml` — site-wide fields
+
 `name` is the Svelte prop name and should be a valid identifier using letters, numbers, and underscores. Exported files use `config`. `options` is accepted by import for older files, but new edits should use `config`.
 
 ## text

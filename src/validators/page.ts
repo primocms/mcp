@@ -15,6 +15,7 @@ export type ValidatePageInput = {
 	page_path: string;
 	page_yaml: string;
 	page_type_yaml: string;
+	page_type_fields_yaml: string;
 	available_blocks: AvailableBlockInput[];
 };
 
@@ -33,11 +34,18 @@ export function validatePage(input: ValidatePageInput): ValidationResult {
 		return resultFromErrors([parsedPageType.error]);
 	}
 
-	const pageTypeFile = pageTypeConfigPath(parsedPageType.value);
-	const pageTypeSchemaErrors = validateJsonSchema("page-type-config", parsedPageType.value, pageTypeFile);
+	const pageTypeConfigFile = pageTypeConfigPath(parsedPageType.value);
+	const pageTypeFieldsFile = pageTypeFieldsPath(parsedPageType.value);
+	const pageTypeSchemaErrors = validateJsonSchema("page-type-config", parsedPageType.value, pageTypeConfigFile);
 	if (pageTypeSchemaErrors.length > 0) {
 		return resultFromErrors(pageTypeSchemaErrors);
 	}
+
+	const parsedPageTypeFields = parseYamlDocument(input.page_type_fields_yaml, pageTypeFieldsFile);
+	if (!parsedPageTypeFields.ok) {
+		return resultFromErrors([parsedPageTypeFields.error]);
+	}
+	errors.push(...validateJsonSchema("page-type-fields", parsedPageTypeFields.value, pageTypeFieldsFile));
 
 	const parsedPage = parseYamlDocument(input.page_yaml, pagePath);
 	if (!parsedPage.ok) {
@@ -48,11 +56,11 @@ export function validatePage(input: ValidatePageInput): ValidationResult {
 
 	const page = isPlainObject(parsedPage.value) ? parsedPage.value : {};
 	const pageType = isPlainObject(parsedPageType.value) ? parsedPageType.value : {};
-	const pageTypeFields = fieldDefinitionsFromDocument(pageType);
+	const pageTypeFields = fieldDefinitionsFromDocument(parsedPageTypeFields.value);
 	const availableBlocks = parseAvailableBlocks(input.available_blocks, errors);
 
-	errors.push(...validatePageTypeMatch(page, pageType, pagePath, pageTypeFile));
-	errors.push(...validatePageFields(page, pageTypeFields, pagePath));
+	errors.push(...validatePageTypeMatch(page, pageType, pagePath, pageTypeConfigFile));
+	errors.push(...validatePageFields(page, pageTypeFields, pagePath, pageTypeFieldsFile));
 	errors.push(...validateSections(page, pageType, availableBlocks, pagePath));
 
 	return resultFromErrors(errors);
@@ -68,6 +76,14 @@ function pageTypeConfigPath(pageTypeDocument: unknown): string {
 	}
 
 	return "page-types/config.yaml";
+}
+
+function pageTypeFieldsPath(pageTypeDocument: unknown): string {
+	if (isPlainObject(pageTypeDocument) && typeof pageTypeDocument.name === "string" && pageTypeDocument.name.length > 0) {
+		return `page-types/${sanitizeFilename(pageTypeDocument.name)}/fields.yaml`;
+	}
+
+	return "page-types/fields.yaml";
 }
 
 function parseAvailableBlocks(inputs: AvailableBlockInput[], errors: ValidationError[]): Map<string, AvailableBlock> {
@@ -119,7 +135,8 @@ function validatePageTypeMatch(
 function validatePageFields(
 	page: Record<string, unknown>,
 	pageTypeFields: FieldDefinition[],
-	pagePath: string
+	pagePath: string,
+	pageTypeFieldsFile: string
 ): ValidationError[] {
 	if (!("fields" in page)) {
 		return [];
@@ -128,7 +145,7 @@ function validatePageFields(
 	return validateContentAgainstFields(page.fields, pageTypeFields, {
 		file: pagePath,
 		context: "top-level page fields",
-		fieldsLabel: "the page type fields"
+		fieldsLabel: pageTypeFieldsFile
 	});
 }
 

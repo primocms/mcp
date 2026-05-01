@@ -2,30 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "block-fields.schema.json",
   "title": "Primo block fields.yaml",
-  "description": "Schema for blocks/{name}/fields.yaml.",
-  "type": "object",
-  "required": [
-    "name",
-    "fields"
-  ],
-  "properties": {
-    "_id": {
-      "type": "string",
-      "minLength": 1,
-      "description": "System-owned block ID. Keep existing IDs stable; omit this when creating a new block."
-    },
-    "name": {
-      "type": "string",
-      "minLength": 1,
-      "description": "Human-readable block name."
-    },
-    "fields": {
-      "type": "array",
-      "items": {
-        "$ref": "field.schema.json#/$defs/field"
-      },
-      "default": []
-    }
+  "description": "Schema for blocks/{name}/fields.yaml. The file is a bare top-level list of field definitions — no wrapper object.",
+  "type": "array",
+  "items": {
+    "$ref": "field.schema.json#/$defs/field"
   },
-  "additionalProperties": false
+  "default": []
 }

@@ -26,9 +26,9 @@ Each page type's `config.yaml` should set:
 - `icon` — Iconify icon name (e.g. `mdi:file-document-outline`).
 - `color` — hex color (e.g. `#2B407D`) used by the editor to badge this page type. Pick an unused color from the palette so types are visually distinguishable.
 
-## Page-type fields (`page-types/{name}/config.yaml` → `fields:`)
+## Page-type fields (`page-types/{name}/fields.yaml`)
 
-Per-page metadata most sites benefit from. SEO trio is the strongest baseline.
+Page-level field definitions live in a sibling `fields.yaml` — the same bare-list shape used by block fields and `site/fields.yaml`. Per-page metadata most sites benefit from; SEO trio is the strongest baseline.
 
 - `seo_title` — text (overrides page name in `<title>`)
 - `seo_description` — text
@@ -54,5 +54,6 @@ When building out a site from a fresh `primo new` scaffold:
 
 1. Add site fields the design depends on (logo, nav, footer at minimum).
 2. For each page type, add the SEO trio plus any type-specific fields.
-3. For each reusable block, add it to the relevant page type's `allowed_blocks`.
-4. Run `validate_page` on each page and `validate_block` on each block.
+3. For each page type, scaffold a header block and a footer block (unless the site is intentionally chromeless), wire them in `layout.yaml`, and seed sensible default body content based on the site's purpose. Don't repeat them in individual `pages/*.yaml`.
+4. For each reusable block, add it to the relevant page type's `allowed_blocks`.
+5. Run `validate_page` on each page and `validate_block` on each block.

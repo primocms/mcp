@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "page-type-fields.schema.json",
+  "title": "Primo page type fields.yaml",
+  "description": "Schema for page-types/{name}/fields.yaml. The file is a bare top-level list of field definitions — no wrapper object, same shape as block fields.yaml and site/fields.yaml.",
+  "type": "array",
+  "items": {
+    "$ref": "field.schema.json#/$defs/field"
+  },
+  "default": []
+}

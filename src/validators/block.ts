@@ -17,34 +17,39 @@ import { parseYamlDocument } from "./yaml.js";
 export type ValidateBlockInput = {
 	name: string;
 	component_svelte: string;
+	config_yaml: string;
 	fields_yaml: string;
-	content_yaml?: string;
+	content_yaml: string;
 };
 
 export function validateBlock(input: ValidateBlockInput): ValidationResult {
 	const errors: ValidationError[] = [];
+	const configFile = "config.yaml";
 	const fieldsFile = "fields.yaml";
 	const contentFile = "content.yaml";
 	const componentFile = "component.svelte";
 
+	const parsedConfig = parseYamlDocument(input.config_yaml, configFile);
+	if (!parsedConfig.ok) {
+		errors.push(parsedConfig.error);
+	} else {
+		errors.push(...validateJsonSchema("block-config", parsedConfig.value, configFile));
+	}
+
 	const parsedFields = parseYamlDocument(input.fields_yaml, fieldsFile);
-	const fieldsDocument = parsedFields.ok ? parsedFields.value : undefined;
-	const fields = parsedFields.ok ? fieldDefinitionsFromDocument(fieldsDocument) : [];
+	const fields = parsedFields.ok ? fieldDefinitionsFromDocument(parsedFields.value) : [];
 
 	if (!parsedFields.ok) {
 		errors.push(parsedFields.error);
 	} else {
-		errors.push(...validateJsonSchema("block-fields", fieldsDocument, fieldsFile));
+		errors.push(...validateJsonSchema("block-fields", parsedFields.value, fieldsFile));
 		errors.push(...validatePageAndSiteFieldConfigs(fields, fieldsFile));
 	}
 
-	const parsedContent =
-		input.content_yaml === undefined ? undefined : parseYamlDocument(input.content_yaml, contentFile);
-	if (parsedContent && !parsedContent.ok) {
+	const parsedContent = parseYamlDocument(input.content_yaml, contentFile);
+	if (!parsedContent.ok) {
 		errors.push(parsedContent.error);
-	}
-
-	if (parsedContent?.ok && parsedFields.ok) {
+	} else if (parsedFields.ok) {
 		errors.push(
 			...validateContentAgainstFields(parsedContent.value, fields, {
 				file: contentFile,

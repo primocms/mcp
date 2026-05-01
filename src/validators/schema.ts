@@ -5,7 +5,12 @@ import type { AnySchema, ErrorObject, ValidateFunction } from "ajv";
 
 import type { ValidationError } from "./types.js";
 
-type SchemaName = "block-fields" | "page" | "page-type-config";
+type SchemaName =
+	| "block-config"
+	| "block-fields"
+	| "page"
+	| "page-type-config"
+	| "page-type-fields";
 
 const schemaDirectory = new URL("../schemas/", import.meta.url);
 
@@ -23,9 +28,11 @@ const fieldSchema = loadSchema("field.schema.json");
 ajv.addSchema(fieldSchema, "field.schema.json");
 
 const validators: Record<SchemaName, ValidateFunction> = {
+	"block-config": ajv.compile(loadSchema("block-config.schema.json")),
 	"block-fields": ajv.compile(loadSchema("block-fields.schema.json")),
 	page: ajv.compile(loadSchema("page.schema.json")),
-	"page-type-config": ajv.compile(loadSchema("page-type-config.schema.json"))
+	"page-type-config": ajv.compile(loadSchema("page-type-config.schema.json")),
+	"page-type-fields": ajv.compile(loadSchema("page-type-fields.schema.json"))
 };
 
 export function validateJsonSchema(schemaName: SchemaName, value: unknown, file: string): ValidationError[] {

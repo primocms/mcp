@@ -5,7 +5,7 @@ import { requireRecord, requireString, validationOutputSchema } from "./validati
 export const validatePageTool = {
 	name: "validate_page",
 	description:
-		"Validate a Primo page YAML file against its page type config and the available block field definitions.",
+		"Validate a Primo page YAML file against its page type config + fields and the available block field definitions.",
 	inputSchema: {
 		type: "object",
 		properties: {
@@ -21,6 +21,10 @@ export const validatePageTool = {
 				type: "string",
 				description: "Full contents of page-types/{page_type}/config.yaml."
 			},
+			page_type_fields_yaml: {
+				type: "string",
+				description: "Full contents of page-types/{page_type}/fields.yaml (bare list of page-level field definitions; use \"[]\" if there are none)."
+			},
 			available_blocks: {
 				type: "array",
 				items: {
@@ -32,7 +36,7 @@ export const validatePageTool = {
 						},
 						fields_yaml: {
 							type: "string",
-							description: "Full contents of blocks/{name}/fields.yaml."
+							description: "Full contents of blocks/{name}/fields.yaml (bare top-level list of field definitions)."
 						}
 					},
 					required: ["name", "fields_yaml"],
@@ -40,7 +44,7 @@ export const validatePageTool = {
 				}
 			}
 		},
-		required: ["page_path", "page_yaml", "page_type_yaml", "available_blocks"],
+		required: ["page_path", "page_yaml", "page_type_yaml", "page_type_fields_yaml", "available_blocks"],
 		additionalProperties: false
 	},
 	outputSchema: validationOutputSchema
@@ -62,6 +66,7 @@ export function readValidatePageInput(args: unknown): ValidatePageInput {
 		page_path: requireString(record, "page_path", validatePageTool.name),
 		page_yaml: requireString(record, "page_yaml", validatePageTool.name),
 		page_type_yaml: requireString(record, "page_type_yaml", validatePageTool.name),
+		page_type_fields_yaml: requireString(record, "page_type_fields_yaml", validatePageTool.name),
 		available_blocks: availableBlocks.map((block, index) => {
 			const blockRecord = requireRecord(block, `validate_page available_blocks[${index}]`);
 			return {
