@@ -2,6 +2,12 @@
 
 Opt-in baseline opinions for building out a fresh Primo site. None of these are enforced — `validate_*` will accept a site without any of them. They exist because most real sites end up needing them, and an agent building a site from scratch should consider them up front.
 
+## Baseline CSS
+
+Primo automatically injects a small baseline reset into every built page (zero margins on body/headings/paragraphs/lists, `box-sizing: border-box`, `img { display: block; max-width: 100% }`, `a { color: inherit }`, system font stack). It's emitted as `<style data-primo-baseline>` before the site's own `head.svelte`, so block authors can assume those defaults without restating them.
+
+Don't redeclare the reset in `site/head.svelte` — it's already there. Override individual rules only when a design needs something different (e.g. restoring `list-style: disc` for a content-heavy block).
+
 ## Site fields (`site/fields.yaml`)
 
 Most sites want a small set of site-wide fields the editor can manage centrally.
