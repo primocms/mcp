@@ -20,6 +20,21 @@ export function validateSvelte5Syntax(component: string, file: string): Validati
 	const instance = getRecord(parsed.ast, "instance");
 	const html = getRecord(parsed.ast, "html") ?? getRecord(parsed.ast, "fragment");
 
+	if (html) {
+		walkAst(html, (node) => {
+			if (node.type === "OnDirective") {
+				const eventName = typeof node.name === "string" ? node.name : "event";
+				errors.push({
+					file,
+					severity: "error",
+					message: `Svelte 5 does not use on:${eventName} directives in Primo blocks.`,
+					fix_hint: `Use on${eventName}={...} instead of on:${eventName}={...}.`,
+					location: locationFromNode(component, node)
+				});
+			}
+		});
+	}
+
 	if (instance) {
 		walkAst(instance, (node) => {
 			if (node.type === "ExportNamedDeclaration" && isLetDeclaration(getRecord(node, "declaration"))) {
@@ -44,21 +59,32 @@ export function validateSvelte5Syntax(component: string, file: string): Validati
 		});
 	}
 
-	if (html) {
-		walkAst(html, (node) => {
-			if (node.type === "OnDirective") {
-				const eventName = typeof node.name === "string" ? node.name : "event";
-				errors.push({
-					file,
-					severity: "error",
-					message: `Svelte 5 does not use on:${eventName} directives in Primo blocks.`,
-					fix_hint: `Use on${eventName}={...} instead of on:${eventName}={...}.`,
-					location: locationFromNode(component, node)
-				});
-			}
-		});
+	return errors;
+}
+
+export function validateSiteHead(component: string, file: string): ValidationError[] {
+	const parsed = parseSvelte(component, file);
+	if (!parsed.ok) {
+		return [parsed.error];
 	}
 
+	const errors: ValidationError[] = [];
+	const fragment = getRecord(parsed.ast, "fragment") ?? getRecord(parsed.ast, "html");
+	const nodes = fragment && Array.isArray(fragment.nodes) ? fragment.nodes : [];
+
+	for (const node of nodes) {
+		if (isRecord(node) && node.type === "SvelteHead") {
+			errors.push({
+				file,
+				severity: "error",
+				message: `${file} contains a <svelte:head> wrapper. This file is injected into <svelte:head> by Primo; the wrapper produces nested <svelte:head> tags and import will fail.`,
+				fix_hint: "Remove the <svelte:head>...</svelte:head> wrapper and keep only its children (e.g. <title>, <meta>, <link>, <script>, <style>).",
+				location: locationFromNode(component, node)
+			});
+		}
+	}
+
+	errors.push(...validateSvelte5Syntax(component, file));
 	return errors;
 }
 

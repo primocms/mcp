@@ -81,6 +81,19 @@ async function fetchSiteRecord(apiUrl: string, token: string, siteId: string): P
 	return (await response.json()) as SiteRecord;
 }
 
+type SyncStatus =
+	| { ok: true }
+	| { ok: false; error: string; failed_at: string };
+
+async function readSyncStatus(sitePath: string): Promise<SyncStatus | null> {
+	try {
+		const raw = await fs.readFile(path.join(sitePath, ".primo", "sync_status.json"), "utf-8");
+		return JSON.parse(raw) as SyncStatus;
+	} catch {
+		return null;
+	}
+}
+
 export async function buildPreview(input: BuildPreviewInput): Promise<BuildPreviewResult> {
 	const sitePath = path.resolve(input.site_path);
 
@@ -89,6 +102,19 @@ export async function buildPreview(input: BuildPreviewInput): Promise<BuildPrevi
 	});
 	if (!site.site_id) {
 		throw new Error(`site.yaml at ${sitePath} is missing site_id.`);
+	}
+
+	// If the most recent file→CMS push failed, the DB still holds the
+	// pre-edit state. Compiling that would silently produce a "successful"
+	// preview of stale content, so refuse and surface the import error
+	// instead. The agent can fix the source file and retry.
+	const sync_status = await readSyncStatus(sitePath);
+	if (sync_status && !sync_status.ok) {
+		return {
+			ok: false,
+			site_url: "",
+			message: `Most recent file→CMS push failed at ${sync_status.failed_at} and the CMS still holds pre-edit state. Fix the source error and let primo dev re-import before building preview. Error: ${sync_status.error}`
+		};
 	}
 
 	const server = await findServerYaml(sitePath);
