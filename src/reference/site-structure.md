@@ -25,8 +25,11 @@ site/             # Site-wide settings
   content.yaml
   head.svelte     # Optional head markup; no <svelte:head> wrapper
   foot.html       # Optional markup injected before the closing body
+uploads/          # Image binaries — drop files here and reference from yaml
 .pala/            # Internal metadata
 ```
+
+The `uploads/` folder is a real input directory. Drop image files in it and reference them from any image field with `upload: uploads/<filename>` — on push, the server creates a `site_uploads` record, stores the binary, and rewrites the yaml to use the record ID. See `field-types.md` (`image`) for the exact yaml shape. After first push, the local file is renamed to its canonical (suffixed) form so subsequent pulls/pushes round-trip without churn.
 
 ## One folder shape, two file roles
 
