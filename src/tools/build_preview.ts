@@ -41,7 +41,22 @@ export const buildPreviewTool = {
 	}
 } as const;
 
-const DEFAULT_PORT = 8090;
+// Matches DEFAULT_PORT in primo-cli/src/utils/server-config.ts and the
+// probe list in primo-cli/src/commands/pull.ts — when server.yaml omits
+// `port`, the MCP must look in the same places the CLI does.
+const DEFAULT_PORT = 3000;
+const FALLBACK_PORTS = [3000, 8080, 5173];
+
+async function probeDevAuth(port: number): Promise<Response | null> {
+	try {
+		return await fetch(`http://127.0.0.1:${port}/api/palacms/dev-auth`, {
+			method: "POST",
+			signal: AbortSignal.timeout(500)
+		});
+	} catch {
+		return null;
+	}
+}
 
 type SiteYaml = { site_id?: string; host?: string };
 type ServerYaml = { port?: number };
@@ -118,21 +133,44 @@ export async function buildPreview(input: BuildPreviewInput): Promise<BuildPrevi
 	}
 
 	const server = await findServerYaml(sitePath);
-	const port = server?.port ?? DEFAULT_PORT;
-	const apiUrl = `http://127.0.0.1:${port}`;
 
+	// Honor an explicit port from server.yaml exactly — no fallback. Otherwise
+	// probe the same ports the CLI's `primo pull` auto-detect uses, so users
+	// who ran `primo init`/`primo dev` (which default to 3000) don't hit a
+	// stale 8090 default.
+	let apiUrl: string;
 	let authResponse: Response;
-	try {
-		authResponse = await fetch(`${apiUrl}/api/palacms/dev-auth`, { method: "POST" });
-	} catch (error) {
-		const reason = error instanceof Error ? error.message : String(error);
-		throw new Error(
-			`Could not reach palacms server at ${apiUrl} (${reason}). Is \`primo dev\` running in this site's directory?`
-		);
+	if (typeof server?.port === "number") {
+		apiUrl = `http://127.0.0.1:${server.port}`;
+		const probed = await probeDevAuth(server.port);
+		if (!probed) {
+			throw new Error(
+				`Could not reach Primo server at ${apiUrl}. Is \`primo dev\` running in this site's directory?`
+			);
+		}
+		authResponse = probed;
+	} else {
+		const tried: number[] = [];
+		let found: { url: string; response: Response } | null = null;
+		for (const port of FALLBACK_PORTS) {
+			tried.push(port);
+			const probed = await probeDevAuth(port);
+			if (probed) {
+				found = { url: `http://127.0.0.1:${port}`, response: probed };
+				break;
+			}
+		}
+		if (!found) {
+			throw new Error(
+				`Could not reach Primo server on any of ports ${tried.join(", ")}. Is \`primo dev\` running in this site's directory?`
+			);
+		}
+		apiUrl = found.url;
+		authResponse = found.response;
 	}
 	if (!authResponse.ok) {
 		throw new Error(
-			`palacms server at ${apiUrl} did not return a dev token (HTTP ${authResponse.status}). Is \`primo dev\` running?`
+			`Primo server at ${apiUrl} did not return a dev token (HTTP ${authResponse.status}). Is \`primo dev\` running?`
 		);
 	}
 	const auth = (await authResponse.json()) as { token?: string };
