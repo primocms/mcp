@@ -61,7 +61,7 @@ export function validatePage(input: ValidatePageInput): ValidationResult {
 
 	errors.push(...validatePageTypeMatch(page, pageType, pagePath, pageTypeConfigFile));
 	errors.push(...validatePageFields(page, pageTypeFields, pagePath, pageTypeFieldsFile));
-	errors.push(...validateSections(page, pageType, availableBlocks, pagePath));
+	errors.push(...validateSections(page, availableBlocks, pagePath));
 
 	return resultFromErrors(errors);
 }
@@ -151,7 +151,6 @@ function validatePageFields(
 
 function validateSections(
 	page: Record<string, unknown>,
-	pageType: Record<string, unknown>,
 	availableBlocks: Map<string, AvailableBlock>,
 	pagePath: string
 ): ValidationError[] {
@@ -160,11 +159,10 @@ function validateSections(
 		return errors;
 	}
 
-	const allowedBlocks =
-		Array.isArray(pageType.allowed_blocks) && pageType.allowed_blocks.length > 0
-			? new Set(pageType.allowed_blocks.filter((block): block is string => typeof block === "string"))
-			: undefined;
-
+	// allowed_blocks gates what content editors can *insert* via the sidebar palette
+	// (enforced in the UI), not what may already exist in a page file. A block can be
+	// added to allowed_blocks, placed on a page, then removed so editors can't add it
+	// elsewhere (e.g. a hero used only on the home page), so we don't validate against it here.
 	page.sections.forEach((section, index) => {
 		const sectionNumber = index + 1;
 		if (!isPlainObject(section)) {
@@ -185,15 +183,6 @@ function validateSections(
 				fix_hint: `Add "${blockName}" to the available_blocks input or change the section block name.`
 			});
 			return;
-		}
-
-		if (allowedBlocks && !allowedBlocks.has(block.name)) {
-			errors.push({
-				file: pagePath,
-				severity: "error",
-				message: `Section ${sectionNumber} uses block "${block.name}", but the page type does not allow that block.`,
-				fix_hint: `Add "${block.name}" to allowed_blocks or use a block listed there.`
-			});
 		}
 
 		if ("content" in section) {
