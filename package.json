@@ -1,5 +1,5 @@
 {
-	"name": "@primo/mcp",
+	"name": "primo-mcp",
 	"version": "0.1.0",
 	"description": "Official Primo MCP server for live, versioned docs and validation in exported Primo sites.",
 	"type": "module",
@@ -10,6 +10,17 @@
 	"bin": {
 		"primo-mcp": "./dist/index.js"
 	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/primocms/primo.git",
+		"directory": "primo-mcp"
+	},
+	"homepage": "https://primo.build",
+	"bugs": {
+		"url": "https://github.com/primocms/primo/issues"
+	},
+	"author": "Primo",
+	"license": "MIT",
 	"files": [
 		"dist",
 		"src/reference/**/*.md",

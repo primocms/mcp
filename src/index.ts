@@ -30,7 +30,7 @@ import { readValidateSiteInput, validateSite, validateSiteTool } from "./tools/v
 import { buildPreview, buildPreviewTool, readBuildPreviewInput } from "./tools/build_preview.js";
 
 const serverInstructions =
-	"This is the official Primo MCP server. It MUST be used whenever working in a Primo site export (any directory containing site.yaml, blocks/, pages/, page-types/). Run list_docs first to discover available reference sections. After editing any block file (component.svelte, fields.yaml, content.yaml), call validate_block and address every error before reporting work as done. After editing a pages/*.yaml or page-types/*/config.yaml, call validate_page. After editing site/head.svelte, call validate_site — that file is injected into <svelte:head> by Primo, so it must not contain a <svelte:head> wrapper. When given a raw value for a field, call resolve_field_value to get the canonical shape. When creating a new block or page type, prefer scaffold_block / scaffold_page_type over hand-writing files - the scaffolders produce files that are guaranteed to pass validate_block / validate_page. To verify a change rendered visually, call build_preview after `primo dev` reports it imported the file change, then load the returned site_url.";
+	"This is the official Primo MCP server. It MUST be used whenever working in a Primo site export (any directory containing site.yaml, blocks/, pages/, page-types/). To start a new site, run `primo new <name>` first — the MCP operates on the resulting export directory. Run list_docs first to discover available reference sections. After editing any block file (component.svelte, fields.yaml, content.yaml), call validate_block and address every error before reporting work as done. After editing a pages/*.yaml or page-types/*/config.yaml, call validate_page. After editing site/head.svelte, call validate_site — that file is injected into <svelte:head> by Primo, so it must not contain a <svelte:head> wrapper. When given a raw value for a field, call resolve_field_value to get the canonical shape. When creating a new block or page type, prefer scaffold_block / scaffold_page_type over hand-writing files - the scaffolders produce files that are guaranteed to pass validate_block / validate_page. To verify a change rendered visually, call build_preview after `primo dev` reports it imported the file change, then load the returned site_url.";
 
 function jsonText(value: unknown) {
 	return JSON.stringify(value, null, 2);
@@ -40,7 +40,7 @@ const docStore = createDocStore(await loadDocSections());
 
 const server = new Server(
 	{
-		name: "@primo/mcp",
+		name: "primo-mcp",
 		version: "0.1.0"
 	},
 	{

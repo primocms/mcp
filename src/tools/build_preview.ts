@@ -49,7 +49,7 @@ const FALLBACK_PORTS = [3000, 8080, 5173];
 
 async function probeDevAuth(port: number): Promise<Response | null> {
 	try {
-		return await fetch(`http://127.0.0.1:${port}/api/palacms/dev-auth`, {
+		return await fetch(`http://127.0.0.1:${port}/api/primo/dev-auth`, {
 			method: "POST",
 			signal: AbortSignal.timeout(500)
 		});
@@ -186,7 +186,7 @@ export async function buildPreview(input: BuildPreviewInput): Promise<BuildPrevi
 	}
 	const summary = await compileAndUploadPublishArtifacts(apiUrl, auth.token, siteRecord);
 
-	const generateResponse = await fetch(`${apiUrl}/api/palacms/generate`, {
+	const generateResponse = await fetch(`${apiUrl}/api/primo/generate`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
