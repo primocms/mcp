@@ -45,6 +45,10 @@ Markdown editor. Component value renders as HTML.
 
 Image upload or external image. Component value is `{ url, alt, width, height }`.
 
+Two ways to supply the image:
+
+### External URL
+
 ```yaml
 image:
   url: https://example.com/hero.jpg
@@ -52,6 +56,23 @@ image:
   width: 1600
   height: 900
 ```
+
+### Local file in `uploads/`
+
+Drop the file into the site's `uploads/` folder, then reference it from yaml using the `upload:` slot with a path starting with `uploads/`:
+
+```yaml
+image:
+  url: ""
+  alt: Barber at work
+  upload: uploads/hero.jpg
+```
+
+On push, the server creates a `site_uploads` record, stores the binary, and rewrites `upload:` to the record's ID. The local file is also renamed to its canonical (suffixed) name to round-trip cleanly on subsequent pulls — e.g. `uploads/hero.jpg` becomes `uploads/hero_a8x2j9.jpg`. After the first push, your yaml will show `upload: <record-id>` and the renderer will resolve it automatically; do not edit the ID by hand.
+
+Leave `url: ""` when using `upload:` — the renderer fills it in from the stored file. To switch from a local upload to an external URL, set `url:` and remove `upload:`.
+
+Render the resolved value the same way regardless of source:
 
 ```svelte
 {#if image?.url}
