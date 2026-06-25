@@ -40,11 +40,16 @@ Page-level field definitions live in `page-types/{name}/fields.yaml` as a bare l
 
 `allowed_blocks` is the list of block folder names offered by the editor's add-block picker for pages of this type.
 
-If `allowed_blocks` is omitted or empty, the page type is treated as static: the editor offers no blocks for new sections. This is valid and should not be treated as a schema error. Use static page types only when the layout is fully defined by `layout.yaml`.
+If `allowed_blocks` is omitted or empty, the page type is treated as static: the editor offers no blocks for new sections, and the `body:` sections in `layout.yaml` are locked (editors cannot add, remove, or reorder them). This is valid and should not be treated as a schema error.
 
 ## Shared Layout
 
-`page-types/{name}/layout.yaml` can define shared `header` and `footer` sections that render on every page of the type. Do not duplicate those sections in individual `pages/*.yaml` files.
+`page-types/{name}/layout.yaml` defines a page type's `header`, `body`, and `footer` sections.
+
+- `header` / `footer` — shared sections that render on every page of the type. Do not duplicate them in individual `pages/*.yaml` files.
+- `body` — **seed defaults** for the page body. When a new page of this type is created, the editor copies these onto the page's own sections. If `allowed_blocks` is non-empty (dynamic), editors can then modify them per page; if `allowed_blocks` is empty (static), they are locked.
+
+`body` is seed-only: it never alters pages that already exist, and the renderer sources a page's body from that page's own `sections:`, not from `layout.yaml`. Editing `body:` after pages exist only affects pages created afterward. A `body` block may reference a block that is not in `allowed_blocks` (e.g. a one-off hero) — that is allowed.
 
 ```yaml
 header:
@@ -53,6 +58,10 @@ header:
       logo:
         url: /logo.svg
         alt: Site logo
+body:
+  - block: hero
+    content:
+      heading: Welcome
 footer:
   - block: footer
     content:

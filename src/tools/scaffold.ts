@@ -86,10 +86,14 @@ const fieldTypes = [
 // Comment-only layout.yaml emitted for new page types. Shows the schema
 // inline so agents/humans see what's possible without it being live config.
 const emptyLayoutTemplate = `# Sections shared by every page of this type. Add blocks here to render
-# the same header/footer across all pages of this type.
+# the same header/footer across all pages of this type. Body sections are
+# seeded onto each newly created page of this type (and locked when the type
+# has no allowed_blocks).
 #
 # header:
 #   - block: site-header
+# body:
+#   - block: hero
 # footer:
 #   - block: site-footer
 `;
@@ -195,7 +199,7 @@ export const scaffoldBlockTool = {
 export const scaffoldPageTypeTool = {
 	name: "scaffold_page_type",
 	description:
-		"Generate ready-to-write page-types/{name}/config.yaml + page-types/{name}/fields.yaml + page-types/{name}/layout.yaml files for a new Primo page type. config.yaml holds the page type's editor metadata; fields.yaml is a bare list of page-level fields (the same shape as block fields.yaml and site/fields.yaml); layout.yaml is a comment-only stub that documents how to add shared header/footer sections.",
+		"Generate ready-to-write page-types/{name}/config.yaml + page-types/{name}/fields.yaml + page-types/{name}/layout.yaml files for a new Primo page type. config.yaml holds the page type's editor metadata; fields.yaml is a bare list of page-level fields (the same shape as block fields.yaml and site/fields.yaml); layout.yaml is a comment-only stub that documents how to add shared header/footer sections and seed default body sections.",
 	inputSchema: {
 		type: "object",
 		properties: {

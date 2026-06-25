@@ -13,7 +13,7 @@ page-types/       # Page templates
   {name}/
     config.yaml     # _id, name, icon, color, allowed_blocks
     fields.yaml     # bare list of page-level field definitions (e.g. seo_title)
-    layout.yaml     # shared header/footer sections (required; comment-only stub when unused)
+    layout.yaml     # header/body/footer sections (required; comment-only stub when unused)
 pages/            # Page content
   index.yaml      # Homepage
   contact.yaml    # Leaf page (/contact)
@@ -40,11 +40,13 @@ Both `blocks/` and `page-types/` use the same folder shape:
 
 Folder names are the stable reference key (page sections use `block: <key>`, page types use `allowed_blocks: [<key>, ...]`). Editing `name` in `config.yaml` only changes the editor display label — it does **not** rename the folder or update references.
 
-Page types additionally have `layout.yaml` — sections that render on every page of that type (typically a shared header and footer). It's required even when no shared sections are wired up; in that case it ships as a comment-only stub that documents the schema. To add a shared header/footer, uncomment the example and reference a block by folder name:
+Page types additionally have `layout.yaml`, which defines the type's `header`, `body`, and `footer` sections. `header`/`footer` render on every page of the type; `body` seeds the default sections copied onto each newly created page (see content-model.md for the seed-only semantics). It's required even when nothing is wired up; in that case it ships as a comment-only stub that documents the schema. To wire sections up, uncomment the example and reference a block by folder name:
 
 ```yaml
 header:
   - block: site-header
+body:
+  - block: hero
 footer:
   - block: site-footer
 ```
