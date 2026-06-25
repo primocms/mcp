@@ -7,7 +7,16 @@ import { load as loadYaml } from "js-yaml";
 
 import { validateJsonSchema } from "../dist/validators/schema.js";
 
-const siteRoot = "/Users/mateo/Desktop/demo-5/sites/barbershop";
+// Fixture site to validate against. Provide via PRIMO_SMOKE_SITE or a CLI arg —
+// no default, since the fixtures live outside this repo.
+const siteRoot = process.env.PRIMO_SMOKE_SITE || process.argv[2];
+if (!siteRoot) {
+	console.error(
+		"smoke-tests: set PRIMO_SMOKE_SITE=<path-to-site> or pass it as an argument\n" +
+		"  e.g. PRIMO_SMOKE_SITE=../primo-sites/sites/coffee-shop npm run smoke"
+	);
+	process.exit(1);
+}
 
 function assert(condition, message) {
 	if (!condition) {
