@@ -90,13 +90,32 @@ config:
 
 ## link
 
-URL or internal page link with a label. Component value is `{ url, label, text }`; exported source may also contain `page` for internal page references.
+URL or internal page link with a label. Component value is `{ url, label, text }`.
 
-```yaml
-cta:
-  url: /contact
-  label: Contact us
-```
+Two shapes in exported source:
+
+- **External link** — set `url`, omit `page`:
+
+  ```yaml
+  cta:
+    url: https://example.com
+    label: Visit us
+  ```
+
+- **Internal page link** — set `page` to the page's `_id`, omit `url`. Primo resolves
+  `page` → the current `url` from that page's slug/path at build time, so the link
+  follows the page when its slug changes. Do NOT hand-write a `url` alongside `page`
+  for internal links — it's unnecessary and freezes the link against slug changes.
+
+  ```yaml
+  nav_link:
+    label: About
+    page: a3qvuy5z3q24p7y
+  ```
+
+Either shape produces the same `{ url, label, text }` value in the component. Because
+an internal link can resolve to an empty string transiently (while its page loads),
+always guard: `{#if link?.url}` and `link?.label`.
 
 ```svelte
 {#if cta?.url}
