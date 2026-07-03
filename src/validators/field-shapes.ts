@@ -504,18 +504,25 @@ function resolveLink(raw: unknown): ResolveFieldValueResult {
 		return { canonical: raw, warnings };
 	}
 
-	if (!("url" in raw)) {
-		warnings.push("Link object is missing url; leaving value unchanged.");
+	// A link is valid with EITHER a url (external) OR a page reference (internal).
+	// For internal links the renderer resolves page -> url from the page's slug at
+	// build time, so page-only { label, page } is the correct, preferred shape and
+	// must not be flagged as malformed. Only warn when neither is present.
+	const hasPage = typeof raw.page === "string" && raw.page !== "";
+	if (!("url" in raw) && !hasPage) {
+		warnings.push("Link object has neither url nor page; leaving value unchanged.");
 		return { canonical: raw, warnings };
 	}
 
 	const canonical: Record<string, unknown> = {
-		url: raw.url,
 		label: typeof raw.label === "string" ? raw.label : ""
 	};
 
-	if (typeof raw.url !== "string") {
-		warnings.push(`Expected link.url to be a string; got ${describeValueType(raw.url)}.`);
+	if ("url" in raw) {
+		canonical.url = raw.url;
+		if (typeof raw.url !== "string") {
+			warnings.push(`Expected link.url to be a string; got ${describeValueType(raw.url)}.`);
+		}
 	}
 	if ("label" in raw && typeof raw.label !== "string") {
 		warnings.push(`Expected link.label to be a string; replaced ${describeValueType(raw.label)} with empty label.`);
