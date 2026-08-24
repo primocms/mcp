@@ -158,9 +158,14 @@ export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStat
 	const warning_details = Array.isArray(status.warning_details)
 		? status.warning_details.map(normalizeWarning)
 		: [];
-	// Prefer the persisted count; fall back to the detail length so a
-	// details-only writer still reports a count.
-	const warning_count = typeof status.warnings === "number" ? status.warnings : warning_details.length;
+	// Prefer the persisted count, but only when it's a sane non-negative
+	// integer — a corrupt file must never produce a negative/fractional count
+	// that violates the output schema. Otherwise fall back to the detail
+	// length so a details-only writer still reports a count.
+	const warning_count =
+		Number.isSafeInteger(status.warnings) && (status.warnings as number) >= 0
+			? (status.warnings as number)
+			: warning_details.length;
 
 	const base = {
 		running: true,
@@ -180,6 +185,17 @@ export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStat
 			error,
 			...(typeof status.failed_at === "string" ? { failed_at: status.failed_at } : {}),
 			message: `Last file→CMS import FAILED${status.failed_at ? ` at ${status.failed_at}` : ""}. The CMS holds pre-edit state until this is fixed. Error: ${error}`
+		};
+	}
+
+	// A status file exists but doesn't record a definitive outcome (ok is
+	// neither true nor false — a partial/corrupt write). Never infer success:
+	// report ok:false so the caller doesn't build a preview from unknown state.
+	if (status.ok !== true) {
+		return {
+			ok: false,
+			...base,
+			message: `Dev status at ${sitePath}/.primo/sync_status.json is incomplete (no definitive import outcome). Treat the CMS state as unknown — do not build a preview until \`primo dev\` records a successful import.`
 		};
 	}
 

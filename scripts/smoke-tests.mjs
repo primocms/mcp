@@ -436,6 +436,35 @@ sections:
 		);
 		assert(failed.running === true && failed.ok === false, "Expected running=true, ok=false on a failed import.");
 		assert(failed.error === "duplicate _id", "Expected the import error to be surfaced.");
+
+		// Older/count-only writer: a count with no warning_details must still
+		// report the count and an empty details array (compat requirement).
+		writeFileSync(
+			join(devStatusDir, ".primo", "sync_status.json"),
+			JSON.stringify({ ok: true, warnings: 1 })
+		);
+		const countOnly = structured(
+			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
+		);
+		assert(countOnly.ok === true && countOnly.warning_count === 1, "Expected count-only status to preserve the count.");
+		assert(countOnly.warning_details.length === 0, "Expected count-only status to have empty details.");
+
+		// A partial record with no definitive outcome must never infer success.
+		writeFileSync(
+			join(devStatusDir, ".primo", "sync_status.json"),
+			JSON.stringify({ warnings: 0 })
+		);
+		const incomplete = structured(
+			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
+		);
+		assert(incomplete.running === true && incomplete.ok === false, "Expected incomplete status (no ok) to report ok=false.");
+
+		// Malformed JSON is treated as no status at all, not an error.
+		writeFileSync(join(devStatusDir, ".primo", "sync_status.json"), "{ not json");
+		const malformed = structured(
+			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
+		);
+		assert(malformed.running === false && malformed.ok === false, "Expected malformed status to report not-running.");
 		console.log("get_dev_status fixture: ok");
 	} finally {
 		rmSync(devStatusDir, { recursive: true, force: true });
