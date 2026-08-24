@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -77,7 +77,8 @@ try {
 		"validate_page",
 		"resolve_field_value",
 		"scaffold_block",
-		"scaffold_page_type"
+		"scaffold_page_type",
+		"get_dev_status"
 	]) {
 		assert(toolNames.has(tool), `Expected ${tool} in tool list.`);
 	}
@@ -381,6 +382,64 @@ sections:
 	);
 	assert(staticConfigErrors.length === 0, `Expected scaffolded page type config to validate: ${JSON.stringify(staticConfigErrors)}`);
 	console.log("scaffold_page_type fixture: ok");
+
+	// get_dev_status reads .primo/sync_status.json from a site dir. Exercise it
+	// against a throwaway dir for the three cases the CLI writes: no file
+	// (dev not running), a clean import, and an import that dropped fields.
+	const devStatusDir = mkdtempSync(join(tmpdir(), "primo-devstatus-"));
+	try {
+		const missing = structured(
+			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
+		);
+		assert(missing.running === false, "Expected running=false when no sync_status.json exists.");
+		assert(missing.ok === false, "Expected ok=false when dev has not run.");
+		assert(missing.warning_count === 0, "Expected warning_count=0 when dev has not run.");
+
+		mkdirSync(join(devStatusDir, ".primo"), { recursive: true });
+		writeFileSync(
+			join(devStatusDir, ".primo", "sync_status.json"),
+			JSON.stringify({ ok: true, last_import_at: "2026-01-01T00:00:00.000Z", port: 3000, url: "http://127.0.0.1:3000" })
+		);
+		const clean = structured(
+			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
+		);
+		assert(clean.running === true && clean.ok === true, "Expected running+ok on a clean import.");
+		assert(clean.warning_count === 0 && clean.warning_details.length === 0, "Expected no warnings on a clean import.");
+		assert(clean.port === 3000 && clean.url === "http://127.0.0.1:3000", "Expected port/url to be surfaced.");
+
+		writeFileSync(
+			join(devStatusDir, ".primo", "sync_status.json"),
+			JSON.stringify({
+				ok: true,
+				warnings: 1,
+				warned_at: "2026-01-01T00:00:00.000Z",
+				warning_details: [
+					{ kind: "orphaned_field", file: "pages/index.yaml", path: "content.hero.title", field: "title", block: "hero", message: "no matching field" }
+				],
+				last_import_at: "2026-01-01T00:00:00.000Z"
+			})
+		);
+		const dropped = structured(
+			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
+		);
+		assert(dropped.ok === true, "Expected ok=true when import succeeded with warnings.");
+		assert(dropped.warning_count === 1, "Expected warning_count=1.");
+		assert(dropped.warning_details.length === 1, "Expected the dropped-field detail to be surfaced.");
+		assert(dropped.warning_details[0].field === "title", "Expected the dropped field name in details.");
+
+		writeFileSync(
+			join(devStatusDir, ".primo", "sync_status.json"),
+			JSON.stringify({ ok: false, error: "duplicate _id", failed_at: "2026-01-01T00:00:00.000Z" })
+		);
+		const failed = structured(
+			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
+		);
+		assert(failed.running === true && failed.ok === false, "Expected running=true, ok=false on a failed import.");
+		assert(failed.error === "duplicate _id", "Expected the import error to be surfaced.");
+		console.log("get_dev_status fixture: ok");
+	} finally {
+		rmSync(devStatusDir, { recursive: true, force: true });
+	}
 } finally {
 	await client.close();
 }
