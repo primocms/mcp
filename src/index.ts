@@ -25,8 +25,8 @@ import {
 	scaffoldPageTypeTool
 } from "./tools/scaffold.js";
 import { readValidateBlockInput, validateBlock, validateBlockTool } from "./tools/validate_block.js";
-import { readValidatePageInput, validatePage, validatePageTool } from "./tools/validate_page.js";
-import { readValidateSiteInput, validateSite, validateSiteTool } from "./tools/validate_site.js";
+import { readValidatePageInput, validatePageFromDisk, validatePageTool } from "./tools/validate_page.js";
+import { readValidateSiteInput, validateSiteFromDisk, validateSiteTool } from "./tools/validate_site.js";
 import { buildPreview, buildPreviewTool, readBuildPreviewInput } from "./tools/build_preview.js";
 
 const serverInstructions =
@@ -106,30 +106,51 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	}
 
 	if (name === validateBlockTool.name) {
-		const result = validateBlock(readToolInput(readValidateBlockInput, args, validateBlockTool.name));
-
-		return {
-			content: [{ type: "text", text: jsonText(result) }],
-			structuredContent: result
-		};
+		const input = readToolInput(readValidateBlockInput, args, validateBlockTool.name);
+		try {
+			const result = await validateBlock(input);
+			return {
+				content: [{ type: "text", text: jsonText(result) }],
+				structuredContent: result
+			};
+		} catch (error) {
+			throw new McpError(
+				ErrorCode.InternalError,
+				error instanceof Error ? error.message : `validate_block failed.`
+			);
+		}
 	}
 
 	if (name === validatePageTool.name) {
-		const result = validatePage(readToolInput(readValidatePageInput, args, validatePageTool.name));
-
-		return {
-			content: [{ type: "text", text: jsonText(result) }],
-			structuredContent: result
-		};
+		const input = readToolInput(readValidatePageInput, args, validatePageTool.name);
+		try {
+			const result = await validatePageFromDisk(input);
+			return {
+				content: [{ type: "text", text: jsonText(result) }],
+				structuredContent: result
+			};
+		} catch (error) {
+			throw new McpError(
+				ErrorCode.InternalError,
+				error instanceof Error ? error.message : `validate_page failed.`
+			);
+		}
 	}
 
 	if (name === validateSiteTool.name) {
-		const result = validateSite(readToolInput(readValidateSiteInput, args, validateSiteTool.name));
-
-		return {
-			content: [{ type: "text", text: jsonText(result) }],
-			structuredContent: result
-		};
+		const input = readToolInput(readValidateSiteInput, args, validateSiteTool.name);
+		try {
+			const result = await validateSiteFromDisk(input);
+			return {
+				content: [{ type: "text", text: jsonText(result) }],
+				structuredContent: result
+			};
+		} catch (error) {
+			throw new McpError(
+				ErrorCode.InternalError,
+				error instanceof Error ? error.message : `validate_site failed.`
+			);
+		}
 	}
 
 	if (name === resolveFieldValueTool.name) {

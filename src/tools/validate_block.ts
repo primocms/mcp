@@ -1,53 +1,38 @@
-import { validateBlock as runValidateBlock, type ValidateBlockInput } from "../validators/block.js";
+import { validateBlockFromDisk, type ValidateBlockOnDiskInput } from "../validators/block.js";
 import type { ValidationResult } from "../validators/types.js";
 import { requireRecord, requireString, validationOutputSchema } from "./validation_schemas.js";
 
 export const validateBlockTool = {
 	name: "validate_block",
 	description:
-		"Validate a Primo block's component.svelte, config.yaml, fields.yaml, and content.yaml for schema, cross-file consistency, and Svelte 5 syntax. All four files are required — content.yaml seeds the editor sidebar preview and must always exist alongside the block.",
+		"Validate a Primo block by reading blocks/{name}/component.svelte, config.yaml, fields.yaml, and content.yaml from disk. Errors if component.svelte, config.yaml, or fields.yaml is missing or empty (content.yaml must exist but may be {}), and checks schema, cross-file consistency, Svelte 5 syntax, and that every content.yaml key matches a defined field. Because it reads the real files, it catches the most common failure — a block whose files were never written to disk — which inline validation cannot. To validate a block you are about to write (before it exists on disk), use scaffold_block, which produces files guaranteed to pass this check.",
 	inputSchema: {
 		type: "object",
 		properties: {
+			site_path: {
+				type: "string",
+				description: "Absolute path to the site export folder containing site.yaml and the blocks/ directory."
+			},
 			name: {
 				type: "string",
-				description: "Block folder name, used in error messages."
-			},
-			component_svelte: {
-				type: "string",
-				description: "Full contents of blocks/{name}/component.svelte."
-			},
-			config_yaml: {
-				type: "string",
-				description: "Full contents of blocks/{name}/config.yaml (holds _id and display name)."
-			},
-			fields_yaml: {
-				type: "string",
-				description: "Full contents of blocks/{name}/fields.yaml (bare top-level list of field definitions)."
-			},
-			content_yaml: {
-				type: "string",
-				description: "Full contents of blocks/{name}/content.yaml (default values for the editor sidebar)."
+				description: "Block folder name under blocks/, e.g. \"hero\" for blocks/hero/."
 			}
 		},
-		required: ["name", "component_svelte", "config_yaml", "fields_yaml", "content_yaml"],
+		required: ["site_path", "name"],
 		additionalProperties: false
 	},
 	outputSchema: validationOutputSchema
 } as const;
 
-export function validateBlock(input: ValidateBlockInput): ValidationResult {
-	return runValidateBlock(input);
+export function validateBlock(input: ValidateBlockOnDiskInput): Promise<ValidationResult> {
+	return validateBlockFromDisk(input);
 }
 
-export function readValidateBlockInput(args: unknown): ValidateBlockInput {
+export function readValidateBlockInput(args: unknown): ValidateBlockOnDiskInput {
 	const record = requireRecord(args, validateBlockTool.name);
 
 	return {
-		name: requireString(record, "name", validateBlockTool.name),
-		component_svelte: requireString(record, "component_svelte", validateBlockTool.name),
-		config_yaml: requireString(record, "config_yaml", validateBlockTool.name),
-		fields_yaml: requireString(record, "fields_yaml", validateBlockTool.name),
-		content_yaml: requireString(record, "content_yaml", validateBlockTool.name)
+		site_path: requireString(record, "site_path", validateBlockTool.name),
+		name: requireString(record, "name", validateBlockTool.name)
 	};
 }
