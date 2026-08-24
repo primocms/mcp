@@ -12,12 +12,11 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/primocms/primo.git",
-		"directory": "primo-mcp"
+		"url": "git+https://github.com/primocms/mcp.git"
 	},
 	"homepage": "https://primo.build",
 	"bugs": {
-		"url": "https://github.com/primocms/primo/issues"
+		"url": "https://github.com/primocms/mcp/issues"
 	},
 	"author": "Primo",
 	"license": "MIT",
