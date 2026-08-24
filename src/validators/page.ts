@@ -179,8 +179,8 @@ function validateSections(
 			errors.push({
 				file: pagePath,
 				severity: "error",
-				message: `Section ${sectionNumber} uses block "${blockName}", but no blocks/${blockName}/ exists in the site. The section will render empty.`,
-				fix_hint: `Create blocks/${blockName}/ (e.g. with scaffold_block) or change the section block name to an existing block.`
+				message: `Section ${sectionNumber} uses block "${blockName}", but no usable blocks/${blockName}/fields.yaml was found in the site. The section will render empty.`,
+				fix_hint: `Create blocks/${blockName}/ with a fields.yaml (e.g. with scaffold_block) or change the section block name to an existing block.`
 			});
 			return;
 		}

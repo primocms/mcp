@@ -1,10 +1,9 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { load as loadYaml } from "js-yaml";
-
 import { sanitizeFilename, validatePage as runValidatePage, type AvailableBlockInput, type ValidatePageInput } from "../validators/page.js";
 import { resultFromErrors, type ValidationError, type ValidationResult } from "../validators/types.js";
+import { isPlainObject, parseYamlDocument } from "../validators/yaml.js";
 import { requireRecord, requireString, validationOutputSchema } from "./validation_schemas.js";
 
 export type ValidatePageOnDiskInput = {
@@ -72,18 +71,20 @@ async function readAvailableBlocks(sitePath: string): Promise<AvailableBlockInpu
 		return [];
 	}
 
-	const blocks: AvailableBlockInput[] = [];
-	for (const name of entries) {
-		try {
-			const fields_yaml = await readFile(path.join(blocksDir, name, "fields.yaml"), "utf-8");
-			blocks.push({ name, fields_yaml });
-		} catch {
-			// A block folder without fields.yaml can't contribute field defs; skip
-			// it. If a page references it, the missing-block error still fires.
-		}
-	}
+	const loaded = await Promise.all(
+		entries.map(async (name) => {
+			try {
+				const fields_yaml = await readFile(path.join(blocksDir, name, "fields.yaml"), "utf-8");
+				return { name, fields_yaml };
+			} catch {
+				// A block folder without fields.yaml can't contribute field defs;
+				// skip it. If a page references it, the missing-block error still fires.
+				return undefined;
+			}
+		})
+	);
 
-	return blocks;
+	return loaded.filter((block): block is AvailableBlockInput => block !== undefined);
 }
 
 // Read a page and everything it depends on from disk, then validate. Resolves
@@ -106,20 +107,25 @@ export async function validatePageFromDisk(input: ValidatePageOnDiskInput): Prom
 		return resultFromErrors(errors);
 	}
 
-	// Resolve which page-type folder to read from the page's own page_type slug.
-	// Fall back to "default" when unset so a page missing page_type still points
-	// somewhere meaningful; the in-memory validator flags the mismatch.
+	// Parse the page up front to resolve which page-type folder to read. If the
+	// page file itself is unparseable, that syntax error is the real, actionable
+	// problem — report it directly and stop, rather than chasing a page-type
+	// folder the page never named and returning a misleading "page-type missing"
+	// error. (Delegating to validatePage with a stub page-type wouldn't help: it
+	// validates the page-type before the page, so the stub error would win.)
+	const parsedPage = parseYamlDocument(page_yaml, pagePath);
+	if (!parsedPage.ok) {
+		return resultFromErrors([...errors, parsedPage.error]);
+	}
+
+	// Fall back to "default" when page_type is unset so a page missing page_type
+	// still points somewhere meaningful; the in-memory validator flags the mismatch.
 	let pageTypeSlug = "default";
-	try {
-		const parsed = loadYaml(page_yaml);
-		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-			const rawType = (parsed as Record<string, unknown>).page_type;
-			if (typeof rawType === "string" && rawType.length > 0) {
-				pageTypeSlug = sanitizeFilename(rawType);
-			}
+	if (isPlainObject(parsedPage.value)) {
+		const rawType = parsedPage.value.page_type;
+		if (typeof rawType === "string" && rawType.length > 0) {
+			pageTypeSlug = sanitizeFilename(rawType);
 		}
-	} catch {
-		// Leave the slug at "default"; validatePage will report the parse error.
 	}
 
 	const pageTypeDir = path.join(sitePath, "page-types", pageTypeSlug);

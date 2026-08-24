@@ -281,9 +281,10 @@ sections:
 		);
 		assert(!brokenPage.ok, "Expected broken page to fail.");
 		assert(hasMessage(brokenPage, "page_type"), "Expected page_type mismatch error.");
-		assert(hasMessage(brokenPage, "unknown"), "Expected unknown page field error.");
-		assert(hasMessage(brokenPage, "no blocks/missing/"), "Expected missing block error.");
+		assert(hasMessage(brokenPage, `"unknown"`), "Expected unknown page field error.");
+		assert(hasMessage(brokenPage, "no usable blocks/missing/fields.yaml"), "Expected missing block error.");
 		assert(hasMessage(brokenPage, "link object"), "Expected section bad link shape error.");
+		assert(hasMessage(brokenPage, `"extra"`), "Expected undefined section content key error.");
 		console.log("validate_page broken fixture: ok");
 
 		// A page whose page_type points at a page-type folder that does not exist
@@ -304,6 +305,29 @@ sections: []
 		assert(!orphanPage.ok, "Expected page with missing page type to fail.");
 		assert(hasMessage(orphanPage, "page-types/nonexistent/config.yaml does not exist"), "Expected missing page-type error.");
 		console.log("validate_page missing-page-type fixture: ok");
+
+		// A malformed page must report the YAML parse error, not a misleading
+		// "page-type missing" error. The page can't be parsed, so its page_type is
+		// unknown and the resolver falls back to page-types/default/ (absent in
+		// this scratch site) — the parse error must still win.
+		writeFileSync(
+			join(scratchSite, "pages", "malformed.yaml"),
+			`name: Broken
+sections:
+  - block: hero
+   content: {}
+`
+		);
+		const malformedPage = structured(
+			await client.callTool({
+				name: "validate_page",
+				arguments: { site_path: scratchSite, page_path: "pages/malformed.yaml" }
+			})
+		);
+		assert(!malformedPage.ok, "Expected malformed page to fail.");
+		assert(hasMessage(malformedPage, "Could not parse"), "Expected YAML parse error, not a page-type error.");
+		assert(!hasMessage(malformedPage, "config.yaml does not exist"), "Parse error must win over the page-type read error.");
+		console.log("validate_page malformed fixture: ok");
 
 		// validate_site reads site/head.svelte. A file that wraps its children in
 		// <svelte:head> breaks the import contract.
