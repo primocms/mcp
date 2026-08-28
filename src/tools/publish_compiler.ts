@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as esbuild from "esbuild";
 import MarkdownIt from "markdown-it";
@@ -11,7 +10,6 @@ import * as svelteCompiler from "svelte/compiler";
 import { render } from "svelte/server";
 
 const { compile } = svelteCompiler;
-const require = createRequire(import.meta.url);
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 const PRIMO_BASELINE_CSS = `
@@ -588,9 +586,12 @@ async function bundleVirtualProject({
 						if (files.has(resolved)) {
 							return { path: resolved, namespace: "primo-virtual" };
 						}
-						if (args.namespace === "primo-virtual" && !args.path.startsWith(".")) {
-							return { path: resolveBareImport(args.path, platform) };
-						}
+						// Let bare imports (svelte, svelte/server, svelte/internal/client) fall
+						// through to esbuild's native resolution. It honors Svelte's export map and
+						// picks the right entry for the bundle platform — the client build resolves to
+						// index-client.js via the "browser" condition — instead of hardcoding a path
+						// into svelte/src, which isn't guaranteed to exist once the package is hoisted
+						// or nested under a different node_modules layout.
 						return undefined;
 					});
 
@@ -671,13 +672,6 @@ function resolveVirtualPath(importPath: string, importer: string): string {
 	const base = importer ? path.posix.dirname(importer) : ".";
 	const normalized = path.posix.normalize(path.posix.join(base, importPath));
 	return normalized.startsWith(".") ? normalized : `./${normalized}`;
-}
-
-function resolveBareImport(importPath: string, platform: "browser" | "node"): string {
-	if (platform === "browser" && importPath === "svelte") {
-		return path.join(PACKAGE_ROOT, "node_modules/svelte/src/index-client.js");
-	}
-	return require.resolve(importPath);
 }
 
 function contentFor(
