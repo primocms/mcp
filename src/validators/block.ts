@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import {
 	editableDataKeyNames,
 	fieldDefinitionsFromDocument,
@@ -21,6 +24,100 @@ export type ValidateBlockInput = {
 	fields_yaml: string;
 	content_yaml: string;
 };
+
+export type ValidateBlockOnDiskInput = {
+	site_path: string;
+	name: string;
+};
+
+type ReadFileResult =
+	| { ok: true; contents: string }
+	| { ok: false; missing: boolean };
+
+async function readBlockFile(filePath: string): Promise<ReadFileResult> {
+	try {
+		return { ok: true, contents: await readFile(filePath, "utf-8") };
+	} catch (error) {
+		const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
+		return { ok: false, missing };
+	}
+}
+
+// Read one of a block's files and either return its contents or push a
+// missing/unreadable/empty error. Only content.yaml may be empty ("{}"); the
+// other files must be present and non-empty or the block will not import.
+async function loadBlockFile(
+	blockDir: string,
+	blockName: string,
+	file: string,
+	allowEmpty: boolean,
+	errors: ValidationError[]
+): Promise<string | undefined> {
+	const result = await readBlockFile(path.join(blockDir, file));
+
+	if (!result.ok) {
+		errors.push({
+			file,
+			severity: "error",
+			message: result.missing
+				? `${blockName}/${file} does not exist on disk at ${blockDir}.`
+				: `${blockName}/${file} could not be read from ${blockDir}.`,
+			fix_hint: result.missing
+				? `Write blocks/${blockName}/${file}, or run scaffold_block to generate all four block files at once.`
+				: `Check file permissions on blocks/${blockName}/${file}.`
+		});
+		return undefined;
+	}
+
+	if (!allowEmpty && result.contents.trim().length === 0) {
+		errors.push({
+			file,
+			severity: "error",
+			message: `${blockName}/${file} is empty. A block needs a non-empty ${file} to import.`,
+			fix_hint: `Populate blocks/${blockName}/${file}, or run scaffold_block to regenerate it.`
+		});
+	}
+
+	return result.contents;
+}
+
+// Read a block's four files from disk and validate them. This is the entry
+// point behind the validate_block MCP tool: unlike validateBlock (which trusts
+// whatever strings it is handed), it errors when a required file is absent or
+// empty — the single most common real-world failure, where the block was never
+// written to disk and inline validation gives false confidence.
+export async function validateBlockFromDisk(input: ValidateBlockOnDiskInput): Promise<ValidationResult> {
+	const blockDir = path.join(path.resolve(input.site_path), "blocks", input.name);
+	const errors: ValidationError[] = [];
+
+	const [component_svelte, config_yaml, fields_yaml, content_yaml] = await Promise.all([
+		loadBlockFile(blockDir, input.name, "component.svelte", false, errors),
+		loadBlockFile(blockDir, input.name, "config.yaml", false, errors),
+		loadBlockFile(blockDir, input.name, "fields.yaml", false, errors),
+		loadBlockFile(blockDir, input.name, "content.yaml", true, errors)
+	]);
+
+	// If any required file is missing or empty, don't run the string validators —
+	// the missing-file errors already tell the real story, and feeding empty
+	// placeholders in would bury them under redundant parse noise.
+	if (
+		errors.some((error) => error.severity === "error") ||
+		component_svelte === undefined ||
+		config_yaml === undefined ||
+		fields_yaml === undefined ||
+		content_yaml === undefined
+	) {
+		return resultFromErrors(errors);
+	}
+
+	return validateBlock({
+		name: input.name,
+		component_svelte,
+		config_yaml,
+		fields_yaml,
+		content_yaml
+	});
+}
 
 export function validateBlock(input: ValidateBlockInput): ValidationResult {
 	const errors: ValidationError[] = [];
