@@ -1,6 +1,6 @@
 {
 	"name": "primo-mcp",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Official Primo MCP server for live, versioned docs and validation in exported Primo sites.",
 	"type": "module",
 	"main": "./dist/index.js",
