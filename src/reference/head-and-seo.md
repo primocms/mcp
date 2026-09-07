@@ -126,5 +126,5 @@ The page URL is not available in head scope, so a canonical link needs an explic
 ## Gotchas
 
 - A page with no sections in any zone (no page-type header/footer, no body sections) renders no head content at all — head fragments only render through the page's sections.
-- The `primo build` static export (for Netlify/Vercel/etc.) diverges from server publish and `build_preview`: it prepends its own `<title>` (`Page Name | Site Name`) and inserts head fragments without evaluating Svelte expressions. The pattern in this doc targets the publish pipeline (`primo push` / `build_preview`).
+- The `primo build` static export (for Netlify/Vercel/etc.) follows this doc's semantics on primo-cli 0.1.21+, including `site/foot.html`. Older CLI versions diverge: they prepend their own `<title>` (`Page Name | Site Name`), insert head fragments without evaluating Svelte expressions, and omit `site/foot.html`.
 - After editing head files, run `build_preview` and check the page source — a dropped title or a raw `{expression}` in the output means one of the rules above was violated.
