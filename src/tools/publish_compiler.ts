@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -11,6 +12,13 @@ import { render } from "svelte/server";
 
 const { compile } = svelteCompiler;
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// The Svelte package Node itself loads — the same install that provides
+// `compile` and `render` above, so it's guaranteed present and complete.
+// esbuild must resolve `svelte` imports from here, not from PACKAGE_ROOT:
+// under a hoisted install (npx) the walk-up from PACKAGE_ROOT can land on a
+// missing or partial svelte copy whose export map points at files that don't
+// exist ("Cannot read file: .../node_modules/svelte/src/index-client.js").
+const SVELTE_PACKAGE_DIR = path.dirname(createRequire(import.meta.url).resolve("svelte/package.json"));
 
 const PRIMO_BASELINE_CSS = `
   :root {
@@ -581,17 +589,27 @@ async function bundleVirtualProject({
 			{
 				name: "primo-mcp-virtual-svelte",
 				setup(build) {
+					// Re-resolve svelte and its subpaths (svelte/server, svelte/internal/client)
+					// from SVELTE_PACKAGE_DIR instead of PACKAGE_ROOT. Going through
+					// build.resolve — rather than require.resolve — keeps esbuild's export-map
+					// condition handling, so the client build still gets the "browser" entry
+					// and the server build the node entry. The pluginData flag stops the
+					// nested resolution from re-entering this hook.
+					build.onResolve({ filter: /^svelte(\/|$)/ }, (args) => {
+						if (args.pluginData?.primoSvelteRedirect) return undefined;
+						return build.resolve(args.path, {
+							kind: args.kind,
+							resolveDir: SVELTE_PACKAGE_DIR,
+							pluginData: { primoSvelteRedirect: true }
+						});
+					});
+
 					build.onResolve({ filter: /.*/ }, (args) => {
 						const resolved = resolveVirtualPath(args.path, args.importer);
 						if (files.has(resolved)) {
 							return { path: resolved, namespace: "primo-virtual" };
 						}
-						// Let bare imports (svelte, svelte/server, svelte/internal/client) fall
-						// through to esbuild's native resolution. It honors Svelte's export map and
-						// picks the right entry for the bundle platform — the client build resolves to
-						// index-client.js via the "browser" condition — instead of hardcoding a path
-						// into svelte/src, which isn't guaranteed to exist once the package is hoisted
-						// or nested under a different node_modules layout.
+						// Any other bare import falls through to esbuild's native resolution.
 						return undefined;
 					});
 
