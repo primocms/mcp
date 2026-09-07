@@ -426,7 +426,7 @@ async function compilePages(graph: SiteGraph, tempDir: string): Promise<Array<{ 
 			: "";
 
 		const html =
-			`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="PalaCMS" />` +
+			`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Primo" />` +
 			(headerResult.head || "") +
 			(bodyResult.head || "") +
 			(footerResult.head || "") +
