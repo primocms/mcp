@@ -28,6 +28,7 @@
 	"scripts": {
 		"build": "node scripts/sync-field-types.mjs && tsc && node scripts/copy-reference.mjs",
 		"smoke": "node scripts/smoke-tests.mjs",
+		"test:resolution": "node scripts/test-svelte-resolution.mjs",
 		"prepack": "npm run build"
 	},
 	"engines": {

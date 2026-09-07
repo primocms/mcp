@@ -565,23 +565,28 @@ async function compileServerBundle(
 	};
 }
 
-async function bundleVirtualProject({
+// Exported for scripts/test-svelte-resolution.mjs. `packageRoot` overrides the
+// resolve base so the test can poison esbuild's walk-up path and prove svelte
+// still resolves through SVELTE_PACKAGE_DIR; production callers never pass it.
+export async function bundleVirtualProject({
 	files,
 	svelteOptions,
 	platform,
-	tempDir
+	tempDir,
+	packageRoot = PACKAGE_ROOT
 }: {
 	files: Map<string, string>;
 	svelteOptions: Record<string, unknown>;
 	platform: "browser" | "node";
 	tempDir: string;
+	packageRoot?: string;
 }): Promise<string> {
 	const result = await esbuild.build({
 		entryPoints: ["./entry.js"],
 		bundle: true,
 		format: "esm",
 		platform,
-		absWorkingDir: PACKAGE_ROOT,
+		absWorkingDir: packageRoot,
 		write: false,
 		outdir: tempDir,
 		logLevel: "silent",
@@ -629,14 +634,14 @@ async function bundleVirtualProject({
 							return {
 								contents: compiled.js.code,
 								loader: "js",
-								resolveDir: PACKAGE_ROOT
+								resolveDir: packageRoot
 							};
 						}
 
 						return {
 							contents: source,
 							loader: "js",
-							resolveDir: PACKAGE_ROOT
+							resolveDir: packageRoot
 						};
 					});
 				}
