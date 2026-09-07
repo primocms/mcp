@@ -14,6 +14,7 @@ page-types/       # Page templates
     config.yaml     # _id, name, icon, color, allowed_blocks
     fields.yaml     # bare list of page-level field definitions (e.g. seo_title)
     layout.yaml     # header/body/footer sections (required; comment-only stub when unused)
+    head.svelte     # Optional per-page-type head markup (per-page SEO) — see head-and-seo.md
 pages/            # Page content
   index.yaml      # Homepage
   contact.yaml    # Leaf page (/contact)
@@ -51,11 +52,11 @@ footer:
   - block: site-footer
 ```
 
-## Site Head
+## Head and Foot
 
-`site/head.svelte` is injected into Primo's generated `<svelte:head>`. Do not wrap it in `<svelte:head>`.
+`site/head.svelte` is injected into Primo's generated `<svelte:head>` on every page, followed by the current page type's `head.svelte`. Do not wrap either in `<svelte:head>`. Use direct head children such as `<meta>`, `<link>`, `<script>`, and `<style>`; put `<title>` in the page-type head, not the site head. `site/foot.html` is static HTML injected before `</body>`.
 
-Use direct head children such as `<title>`, `<meta>`, `<link>`, `<script>`, and `<style>`.
+See `head-and-seo.md` for how the head is assembled, what data is in scope, and the per-page SEO pattern.
 
 ## System IDs
 

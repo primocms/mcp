@@ -36,7 +36,7 @@ Each page type's `config.yaml` should set:
 
 Page-level field definitions live in a sibling `fields.yaml` — the same bare-list shape used by block fields and `site/fields.yaml`. Per-page metadata most sites benefit from; SEO trio is the strongest baseline.
 
-- `seo_title` — text (overrides page name in `<title>`)
+- `seo_title` — text (rendered into `<title>` by the page type's `head.svelte` — there is no automatic title from the page name; see `head-and-seo.md`)
 - `seo_description` — text
 - `og_image` — image (social share preview)
 
