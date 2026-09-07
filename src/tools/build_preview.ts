@@ -17,7 +17,7 @@ export type BuildPreviewResult = {
 export const buildPreviewTool = {
 	name: "build_preview",
 	description:
-		"Regenerate the published preview of a Primo site so file changes are visible at the site URL. Requires a running palacms server (started by `primo dev`); call this after editing block, page, or page-type files and `primo dev` has reported it imported the change.",
+		"Regenerate the published preview of a Primo site so file changes are visible at the site URL. Requires a running primo server (started by `primo dev`); call this after editing block, page, or page-type files and `primo dev` has reported it imported the change.",
 	inputSchema: {
 		type: "object",
 		properties: {
@@ -175,13 +175,13 @@ export async function buildPreview(input: BuildPreviewInput): Promise<BuildPrevi
 	}
 	const auth = (await authResponse.json()) as { token?: string };
 	if (!auth.token) {
-		throw new Error(`palacms dev-auth response did not include a token.`);
+		throw new Error(`primo dev-auth response did not include a token.`);
 	}
 
 	const siteRecord = await fetchSiteRecord(apiUrl, auth.token, site.site_id);
 	if (!siteRecord) {
 		throw new Error(
-			`Site ${site.site_id} was not found in the palacms server at ${apiUrl}. Is \`primo dev\` running for ${sitePath}?`
+			`Site ${site.site_id} was not found in the primo server at ${apiUrl}. Is \`primo dev\` running for ${sitePath}?`
 		);
 	}
 	const summary = await compileAndUploadPublishArtifacts(apiUrl, auth.token, siteRecord);
