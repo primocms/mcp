@@ -27,8 +27,19 @@ site/             # Site-wide settings
   head.svelte     # Optional head markup; no <svelte:head> wrapper
   foot.html       # Optional markup injected before the closing body
 uploads/          # Image binaries — drop files here and reference from yaml
-.pala/            # Internal metadata
+.primo/           # Internal metadata — do not edit, do not commit
 ```
+
+## Multi-site workspaces
+
+A workspace (marketplace export) holds many sites: `server.yaml` at the root, one site per folder under `sites/`, an optional shared `library/`, and the workspace database in a root `.primo/`. Each `sites/<name>/` folder has the single-site layout above plus a `site.yaml` (display name + `site_id`).
+
+Creating a folder under `sites/` is **not** enough to make the site exist — its records must be registered into the workspace database:
+
+- `primo new <name>` scaffolds a starter site and registers it.
+- `primo add <name>` registers an existing hand-authored folder: it mints the `site_id` into `site.yaml` if missing and imports the site's records, picking it up live if `primo dev` is already running. Run it from the workspace root.
+
+Never register a site by cd-ing into its folder and running `primo dev` there — that creates a separate nested database instead of registering into the workspace.
 
 The `uploads/` folder is a real input directory. Drop image files in it and reference them from any image field with `upload: uploads/<filename>` — on push, the server creates a `site_uploads` record, stores the binary, and rewrites the yaml to use the record ID. See `field-types.md` (`image`) for the exact yaml shape. After first push, the local file is renamed to its canonical (suffixed) form so subsequent pulls/pushes round-trip without churn.
 
