@@ -406,6 +406,30 @@ sections:
 		assert(clean.running === true && clean.ok === true, "Expected running+ok on a clean import.");
 		assert(clean.warning_count === 0 && clean.warning_details.length === 0, "Expected no warnings on a clean import.");
 		assert(clean.port === 3000 && clean.url === "http://127.0.0.1:3000", "Expected port/url to be surfaced.");
+		// No source files exist yet → disk cannot be newer than the import, so
+		// the tool must NOT claim drift and MAY assert files are in the CMS.
+		assert(clean.files_modified_since_import === false, "Expected no drift when no source files exist.");
+		assert(/All file content is in the CMS/.test(clean.message), "Expected the clean 'in the CMS' message when there's no drift.");
+
+		// Drift: a source file modified AFTER last_import_at must flip the tool
+		// off its "all content is in the CMS" claim — this is the check that
+		// catches a watcher that dropped a file create/edit. last_import_at stays
+		// in the past (2026-01-01) while the file we write now is far newer.
+		mkdirSync(join(devStatusDir, "page-types", "default"), { recursive: true });
+		writeFileSync(join(devStatusDir, "page-types", "default", "head.svelte"), "<title>drifted</title>\n");
+		const drifted = structured(
+			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
+		);
+		assert(drifted.ok === true, "Drift does not invalidate the last import outcome — ok stays true.");
+		assert(drifted.files_modified_since_import === true, "Expected files_modified_since_import=true when a file is newer than last_import_at.");
+		assert(
+			Array.isArray(drifted.stale_files) && drifted.stale_files.includes("page-types/default/head.svelte"),
+			"Expected the stale file to be listed in stale_files."
+		);
+		assert(!/All file content is in the CMS/.test(drifted.message), "Expected the tool to STOP claiming everything is in the CMS once disk drifted.");
+		// Clean up the drift fixture so later status writes to the same dir
+		// (count-only, incomplete, malformed) aren't spuriously flagged as drift.
+		rmSync(join(devStatusDir, "page-types"), { recursive: true, force: true });
 
 		writeFileSync(
 			join(devStatusDir, ".primo", "sync_status.json"),
