@@ -161,19 +161,40 @@ function normalizeWarning(raw: unknown): DevWarningDetail {
 // what catches a watcher that dropped a create/edit: the file exists on disk,
 // is newer than the last import, yet sync_status.json still reads ok. Bounded
 // output (MAX_STALE_FILES) but the returned flag reflects whether ANY exist.
+//
+// `complete` distinguishes "scanned everything, found no drift" from "couldn't
+// finish the scan" (a permission/I/O error). The caller MUST NOT report
+// files_modified_since_import: false — nor the "all content is in the CMS"
+// message — off an incomplete scan, or we'd reintroduce the exact false
+// confidence this check exists to eliminate. Only an expected missing
+// directory (ENOENT — e.g. a site with no uploads/) is treated as empty.
+type DriftScan = { stale: string[]; complete: boolean }
+
+function is_enoent(err: unknown): boolean {
+	return (err as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
 async function findFilesModifiedSince(
 	sitePath: string,
 	importedAtMs: number
-): Promise<string[]> {
-	const cutoff = importedAtMs - IMPORT_WRITEBACK_TOLERANCE_MS;
+): Promise<DriftScan> {
+	// Ignore files written up to the tolerance AFTER the import stamp — that's
+	// the import's own writeback (renamed uploads, normalized YAML) landing
+	// microseconds later. Adding the tolerance moves the cutoff forward so those
+	// self-writes fall at or below it; a genuine later user edit still exceeds it.
+	const cutoff = importedAtMs + IMPORT_WRITEBACK_TOLERANCE_MS;
 	const stale: string[] = [];
+	let complete = true;
 
 	async function walk(dir: string, relBase: string): Promise<void> {
 		let entries;
 		try {
 			entries = await fs.readdir(dir, { withFileTypes: true });
-		} catch {
-			// Dir doesn't exist for this site (e.g. no uploads/) — skip it.
+		} catch (err) {
+			// A missing optional dir (no uploads/, etc.) is expected — skip it.
+			// Any other error (permissions, I/O) means the scan is incomplete;
+			// record that so the caller doesn't infer a clean disk.
+			if (!is_enoent(err)) complete = false;
 			return;
 		}
 		for (const entry of entries) {
@@ -188,8 +209,11 @@ async function findFilesModifiedSince(
 			try {
 				const st = await fs.stat(full);
 				if (st.mtimeMs > cutoff) stale.push(rel);
-			} catch {
-				// Vanished mid-walk — ignore.
+			} catch (err) {
+				// A file that vanished mid-walk (ENOENT) is fine — it's gone, not
+				// stale. Any other stat error leaves this file's state unknown,
+				// so the scan is no longer authoritative.
+				if (!is_enoent(err)) complete = false;
 			}
 		}
 	}
@@ -198,7 +222,7 @@ async function findFilesModifiedSince(
 		await walk(path.join(sitePath, dir), dir);
 	}
 	stale.sort();
-	return stale;
+	return { stale, complete };
 }
 
 async function readSyncStatus(sitePath: string): Promise<RawSyncStatus | null> {
@@ -277,22 +301,36 @@ export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStat
 	// completed, not that disk still agrees with the CMS. If a file was created
 	// or edited after last_import_at (and the watcher dropped the event, or a
 	// push simply hasn't fired yet), the CMS is stale. Detect that by comparing
-	// on-disk mtimes against last_import_at. Only meaningful with a timestamp to
-	// compare against; without one we can't tell fresh from stale, so we stay
-	// silent rather than guess.
+	// on-disk mtimes against last_import_at.
+	//
+	// Three outcomes, and only one lets us claim disk agrees with the CMS:
+	//   - unknown  → no last_import_at to compare against, OR the scan hit a
+	//                permission/I/O error and couldn't finish. We must NOT
+	//                assert "in the CMS" or files_modified_since_import: false;
+	//                omit the drift fields and say we couldn't verify.
+	//   - drifted  → a file is newer than the import; flag it.
+	//   - clean    → scan finished, nothing newer; safe to claim agreement.
 	const importedAtMs = status.last_import_at ? Date.parse(status.last_import_at) : NaN;
-	const staleFiles = Number.isFinite(importedAtMs)
+	const scan = Number.isFinite(importedAtMs)
 		? await findFilesModifiedSince(sitePath, importedAtMs)
-		: [];
-	const drifted = staleFiles.length > 0;
-	const driftBase = Number.isFinite(importedAtMs)
+		: null;
+	const drifted = scan !== null && scan.complete && scan.stale.length > 0;
+	// "Known" means we have an authoritative answer: a finished scan against a
+	// real timestamp. An unfinished scan (or no timestamp) is not known.
+	const drift_known = scan !== null && scan.complete;
+	const driftBase = drift_known
 		? {
 			files_modified_since_import: drifted,
-			...(drifted ? { stale_files: staleFiles.slice(0, MAX_STALE_FILES) } : {})
+			...(drifted ? { stale_files: scan.stale.slice(0, MAX_STALE_FILES) } : {})
 		}
 		: {};
 	const staleClause = drifted
-		? ` ⚠ ${staleFiles.length} file${staleFiles.length === 1 ? " has" : "s have"} changed on disk since then and ${staleFiles.length === 1 ? "is" : "are"} NOT yet in the CMS (see stale_files) — the last import does not reflect current disk. Wait for \`primo dev\` to import, or if it doesn't fire, re-save the file to retrigger the watcher.`
+		? ` ⚠ ${scan.stale.length} file${scan.stale.length === 1 ? " has" : "s have"} changed on disk since then and ${scan.stale.length === 1 ? "is" : "are"} NOT yet in the CMS (see stale_files) — the last import does not reflect current disk. Wait for \`primo dev\` to import, or if it doesn't fire, re-save the file to retrigger the watcher.`
+		: "";
+	// When we couldn't verify (scan incomplete despite having a timestamp),
+	// caveat the success rather than claiming agreement we didn't establish.
+	const unverifiedClause = scan !== null && !scan.complete
+		? " Could not verify disk against the CMS (some files were unreadable), so agreement is unconfirmed."
 		: "";
 
 	// Last import succeeded but dropped fields.
@@ -302,18 +340,24 @@ export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStat
 			...base,
 			...driftBase,
 			...(typeof status.warned_at === "string" ? { warned_at: status.warned_at } : {}),
-			message: `Last import succeeded but dropped ${warning_count} field${warning_count === 1 ? "" : "s"} — that content is not in the CMS. See warning_details for exactly what was dropped and where.${staleClause}`
+			message: `Last import succeeded but dropped ${warning_count} field${warning_count === 1 ? "" : "s"} — that content is not in the CMS. See warning_details for exactly what was dropped and where.${staleClause}${unverifiedClause}`
 		};
 	}
 
-	// Clean import.
+	// Clean import. Only claim "all file content is in the CMS" when a finished
+	// scan actually confirmed no drift.
+	const cleanTail = drifted
+		? `, but disk and CMS have since drifted.${staleClause}`
+		: unverifiedClause
+			? `.${unverifiedClause}`
+			: drift_known
+				? ". All file content is in the CMS."
+				: "."; // no timestamp to verify against — don't overclaim
 	return {
 		ok: true,
 		...base,
 		...driftBase,
-		message: drifted
-			? `Last import succeeded with no dropped fields${status.last_import_at ? ` (${status.last_import_at})` : ""}, but disk and CMS have since drifted.${staleClause}`
-			: `Last import succeeded with no dropped fields${status.last_import_at ? ` (${status.last_import_at})` : ""}. All file content is in the CMS.`
+		message: `Last import succeeded with no dropped fields${status.last_import_at ? ` (${status.last_import_at})` : ""}${cleanTail}`
 	};
 }
 
