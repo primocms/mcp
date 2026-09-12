@@ -260,8 +260,10 @@ async function checkRegistration(sitePath: string): Promise<RegistrationCheck> {
 			// wrong path, where `primo add` guidance would mislead.
 			for (const marker of ["pages", "blocks", "page-types", "site"]) {
 				try {
-					await fs.stat(path.join(sitePath, marker));
-					return "unregistered";
+					// Must be a directory — a plain file named e.g. `pages` in a
+					// non-site folder would otherwise earn `primo add` guidance.
+					const stat = await fs.stat(path.join(sitePath, marker));
+					if (stat.isDirectory()) return "unregistered";
 				} catch {
 					// keep looking
 				}
