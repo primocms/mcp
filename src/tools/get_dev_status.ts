@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { load as loadYaml } from "js-yaml";
 import { requireRecord, requireString } from "./validation_schemas.js";
 
 export type GetDevStatusInput = {
@@ -70,6 +71,12 @@ export type GetDevStatusResult = {
 	// spawn its own to find out.
 	port?: number;
 	url?: string;
+	// True when the site was never registered with the workspace CMS —
+	// site.yaml has no site_id (or doesn't exist for a site-shaped folder).
+	// `primo dev` skips such sites with a warning, so "run primo dev" is a
+	// dead end; the fix is `primo add <folder>` from the workspace root.
+	// Present only when running=false and the condition was detected.
+	unregistered?: boolean;
 	// Human-readable one-liner summarizing the state.
 	message: string;
 };
@@ -92,7 +99,7 @@ const IMPORT_WRITEBACK_TOLERANCE_MS = 2000;
 export const getDevStatusTool = {
 	name: "get_dev_status",
 	description:
-		"Read the current `primo dev` state for a site without spawning a dev server yourself. Returns whether the last file→CMS import succeeded, exactly which fields were dropped (file, path, block, field, message), when it last imported, and where the running server is (port/url). Use this instead of starting your own dev server — the user runs `primo dev` in their own terminal and this reads the state it writes to .primo/sync_status.json. If `running` is false, `primo dev` has not completed a first import for this site; ask the user to run it rather than launching one.",
+		"Read the current `primo dev` state for a site without spawning a dev server yourself. Returns whether the last file→CMS import succeeded, exactly which fields were dropped (file, path, block, field, message), when it last imported, and where the running server is (port/url). Use this instead of starting your own dev server — the user runs `primo dev` in their own terminal and this reads the state it writes to .primo/sync_status.json. If `running` is false, `primo dev` has not completed a first import for this site; ask the user to run it rather than launching one. If `unregistered` is true, the site was never registered with the workspace CMS (site.yaml has no site_id) and `primo dev` would skip it — ask the user to run `primo add <folder>` from the workspace root instead.",
 	inputSchema: {
 		type: "object",
 		properties: {
@@ -134,6 +141,7 @@ export const getDevStatusTool = {
 			stale_files: { type: "array", items: { type: "string" } },
 			port: { type: "integer" },
 			url: { type: "string" },
+			unregistered: { type: "boolean" },
 			message: { type: "string" }
 		},
 		required: ["ok", "running", "warning_count", "warning_details", "message"],
@@ -225,6 +233,46 @@ async function findFilesModifiedSince(
 	return { stale, complete };
 }
 
+// Distinguish "dev hasn't run yet" from "this site was never registered".
+// A site.yaml without a site_id can never import — `primo dev` skips it with
+// a warning — so answering "run primo dev" would send the agent (and user)
+// in a circle. Only `primo add` mints the id and registers the site.
+//   - "unregistered": site.yaml exists without a usable site_id, or there is
+//     no site.yaml but the folder carries site content dirs
+//   - "registered":   site.yaml has a site_id (dev just hasn't run/imported)
+//   - "unknown":      couldn't tell (unreadable yaml, or not site-shaped) —
+//     fall back to the generic not-running message
+type RegistrationCheck = "unregistered" | "registered" | "unknown";
+
+async function checkRegistration(sitePath: string): Promise<RegistrationCheck> {
+	try {
+		const raw = await fs.readFile(path.join(sitePath, "site.yaml"), "utf-8");
+		const parsed = loadYaml(raw);
+		const site_id =
+			typeof parsed === "object" && parsed !== null
+				? (parsed as Record<string, unknown>).site_id
+				: undefined;
+		return typeof site_id === "string" && site_id.trim() ? "registered" : "unregistered";
+	} catch (err) {
+		if (is_enoent(err)) {
+			// No site.yaml at all. Site-shaped folders (they carry the content
+			// dirs a real site has) are unregistered; anything else is likely a
+			// wrong path, where `primo add` guidance would mislead.
+			for (const marker of ["pages", "blocks", "page-types", "site"]) {
+				try {
+					// Must be a directory — a plain file named e.g. `pages` in a
+					// non-site folder would otherwise earn `primo add` guidance.
+					const stat = await fs.stat(path.join(sitePath, marker));
+					if (stat.isDirectory()) return "unregistered";
+				} catch {
+					// keep looking
+				}
+			}
+		}
+		return "unknown";
+	}
+}
+
 async function readSyncStatus(sitePath: string): Promise<RawSyncStatus | null> {
 	try {
 		const raw = await fs.readFile(path.join(sitePath, ".primo", "sync_status.json"), "utf-8");
@@ -244,6 +292,17 @@ export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStat
 	const status = await readSyncStatus(sitePath);
 
 	if (!status) {
+		if (await checkRegistration(sitePath) === "unregistered") {
+			const folder = path.basename(sitePath);
+			return {
+				ok: false,
+				running: false,
+				unregistered: true,
+				warning_count: 0,
+				warning_details: [],
+				message: `This site isn't registered with the workspace CMS — site.yaml has no site_id (or doesn't exist yet). \`primo dev\` skips unregistered sites with a warning, so running it will NOT import this site. Ask the user to run \`primo add ${folder}\` from the workspace root to register and import it — do not spawn a dev server yourself.`
+			};
+		}
 		return {
 			ok: false,
 			running: false,
