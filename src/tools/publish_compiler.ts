@@ -713,6 +713,12 @@ function contentFor(
 	return buildContent(graph, target, fields, entries, options);
 }
 
+// Test-only seam: lets scripts drive the pure content-building logic against a
+// hand-built graph without a live API. Not part of the public tool surface.
+export function __test_buildSiteContent(graph: SiteGraph): Record<string, Record<string, unknown>> {
+	return contentFor(graph, { kind: "site", entity: graph.site });
+}
+
 function buildContent(
 	graph: SiteGraph,
 	target:
@@ -814,12 +820,17 @@ function buildContent(
 				content.en[field.key] = getEmptyValue(field);
 				continue;
 			}
-			const value = normalizeEntryValue(entry.value) as Record<string, unknown>;
-			const uploadId = typeof value.upload === "string" ? value.upload : "";
+			const value = normalizeEntryValue(entry.value);
+			if (!value || typeof value !== "object") {
+				localeContent(content, entry.locale || "en")[field.key] = getEmptyValue(field);
+				continue;
+			}
+			const image = value as Record<string, unknown>;
+			const uploadId = typeof image.upload === "string" ? image.upload : "";
 			const upload = uploadId ? graph.uploads.find((candidate) => candidate.id === uploadId) : undefined;
-			const url = typeof value.url === "string" && value.url ? value.url : upload ? `/_uploads/${upload.file}` : "";
+			const url = typeof image.url === "string" && image.url ? image.url : upload ? `/_uploads/${upload.file}` : "";
 			localeContent(content, entry.locale || "en")[field.key] = {
-				alt: typeof value.alt === "string" ? value.alt : "",
+				alt: typeof image.alt === "string" ? image.alt : "",
 				url
 			};
 			continue;
@@ -862,11 +873,16 @@ function buildContent(
 				content.en[field.key] = getEmptyValue(field);
 				continue;
 			}
-			const value = normalizeEntryValue(entry.value) as Record<string, unknown>;
-			const pageId = typeof value.page === "string" ? value.page : "";
+			const value = normalizeEntryValue(entry.value);
+			if (!value || typeof value !== "object") {
+				localeContent(content, entry.locale || "en")[field.key] = getEmptyValue(field);
+				continue;
+			}
+			const link = value as Record<string, unknown>;
+			const pageId = typeof link.page === "string" ? link.page : "";
 			const linkedPage = pageId ? graph.pages.find((page) => page.id === pageId) : undefined;
-			const label = typeof value.label === "string" ? value.label : "";
-			const url = linkedPage ? buildLivePagePath(graph, linkedPage) : typeof value.url === "string" ? value.url : "";
+			const label = typeof link.label === "string" ? link.label : "";
+			const url = linkedPage ? buildLivePagePath(graph, linkedPage) : typeof link.url === "string" ? link.url : "";
 			localeContent(content, entry.locale || "en")[field.key] = {
 				url,
 				label,
