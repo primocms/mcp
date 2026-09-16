@@ -46,13 +46,16 @@ const graph = emptyGraph(site);
 
 graph.siteFields = [
 	{ id: "f-img", key: "hero", type: "image", site: "site-1" },
-	{ id: "f-link", key: "cta", type: "link", site: "site-1" }
+	{ id: "f-link", key: "cta", type: "link", site: "site-1" },
+	{ id: "f-img-fr", key: "hero_fr", type: "image", site: "site-1" }
 ];
 
 // Orphaned entries whose stored value normalizes to null — the crash trigger.
+// The fr entry also checks the empty value lands under its own locale.
 graph.siteEntries = [
 	{ id: "e-img", field: "f-img", value: null },
-	{ id: "e-link", field: "f-link", value: null }
+	{ id: "e-link", field: "f-link", value: null },
+	{ id: "e-img-fr", field: "f-img-fr", value: null, locale: "fr" }
 ];
 
 let content;
@@ -72,5 +75,10 @@ assert(en.hero.alt === "", `Expected empty image alt, got ${JSON.stringify(en.he
 // Null link collapses to the empty-link value.
 assert(en.cta && typeof en.cta === "object", "Expected an empty link object for the null link entry.");
 assert(en.cta.url === "", `Expected empty link url, got ${JSON.stringify(en.cta.url)}.`);
+
+// A null value on a non-en entry lands under its own locale, not en.
+const fr = content.fr ?? {};
+assert(fr.hero_fr && typeof fr.hero_fr === "object", "Expected the empty image to land under the fr locale.");
+assert(en.hero_fr === undefined, "Empty fr image value leaked into the en locale.");
 
 console.log("null-image-value: ok — null image/link entries no longer crash the build.");

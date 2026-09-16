@@ -822,7 +822,7 @@ function buildContent(
 			}
 			const value = normalizeEntryValue(entry.value);
 			if (!value || typeof value !== "object") {
-				content.en[field.key] = getEmptyValue(field);
+				localeContent(content, entry.locale || "en")[field.key] = getEmptyValue(field);
 				continue;
 			}
 			const image = value as Record<string, unknown>;
@@ -875,7 +875,7 @@ function buildContent(
 			}
 			const value = normalizeEntryValue(entry.value);
 			if (!value || typeof value !== "object") {
-				content.en[field.key] = getEmptyValue(field);
+				localeContent(content, entry.locale || "en")[field.key] = getEmptyValue(field);
 				continue;
 			}
 			const link = value as Record<string, unknown>;
