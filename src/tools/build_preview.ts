@@ -1,3 +1,4 @@
+import { read_dev_runtime, runtime_is_running } from "./dev-runtime.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { load as loadYaml } from "js-yaml";
@@ -47,7 +48,15 @@ export const buildPreviewTool = {
 const DEFAULT_PORT = 3000;
 const FALLBACK_PORTS = [3000, 8080, 5173];
 
-async function probeDevAuth(port: number): Promise<Response | null> {
+async function probeDevAuth(port: number, workspace?: string): Promise<Response | null> {
+	if (workspace) {
+		try {
+			const identity = await fetch(`http://127.0.0.1:${port + 1}/__primo/runtime`, { signal: AbortSignal.timeout(500) });
+			const value = await identity.json() as { version?: number; workspace?: string };
+			if (value.version === 1 && typeof value.workspace === "string"
+				&& (!identity.ok || value.workspace !== await fs.realpath(workspace))) return null;
+		} catch { /* Older CLIs do not expose session identity. */ }
+	}
 	try {
 		return await fetch(`http://127.0.0.1:${port}/api/primo/dev-auth`, {
 			method: "POST",
@@ -59,7 +68,7 @@ async function probeDevAuth(port: number): Promise<Response | null> {
 }
 
 type SiteYaml = { site_id?: string; host?: string };
-type ServerYaml = { port?: number };
+type ServerYaml = { port?: number; workspace: string };
 type SiteRecord = { id: string; name: string; host?: string; head?: string; foot?: string };
 
 async function readYamlFile<T>(filePath: string): Promise<T> {
@@ -72,7 +81,7 @@ async function findServerYaml(startDir: string): Promise<ServerYaml | null> {
 	while (true) {
 		const candidate = path.join(dir, "server.yaml");
 		try {
-			return await readYamlFile<ServerYaml>(candidate);
+			return { ...await readYamlFile<ServerYaml>(candidate), workspace: dir };
 		} catch {
 			// continue walking up
 		}
@@ -134,15 +143,18 @@ export async function buildPreview(input: BuildPreviewInput): Promise<BuildPrevi
 
 	const server = await findServerYaml(sitePath);
 
-	// Honor an explicit port from server.yaml exactly — no fallback. Otherwise
-	// probe the same ports the CLI's `primo pull` auto-detect uses, so users
-	// who ran `primo init`/`primo dev` (which default to 3000) don't hit a
-	// stale 8090 default.
+	// A session-selected port takes precedence over configuration. Verify the
+	// session identity so stale metadata cannot send a build to another server.
+	const runtime = await read_dev_runtime(server?.workspace ?? sitePath);
+	if (runtime && !await runtime_is_running(runtime)) {
+		throw new Error(`The Primo dev session for this workspace is no longer reachable. Start primo dev in this workspace.`);
+	}
+	const selectedPort = runtime?.port ?? server?.port;
 	let apiUrl: string;
 	let authResponse: Response;
-	if (typeof server?.port === "number") {
-		apiUrl = `http://127.0.0.1:${server.port}`;
-		const probed = await probeDevAuth(server.port);
+	if (typeof selectedPort === "number") {
+		apiUrl = `http://127.0.0.1:${selectedPort}`;
+		const probed = await probeDevAuth(selectedPort, runtime ? undefined : server?.workspace);
 		if (!probed) {
 			throw new Error(
 				`Could not reach Primo server at ${apiUrl}. Is \`primo dev\` running in this site's directory?`
@@ -154,7 +166,7 @@ export async function buildPreview(input: BuildPreviewInput): Promise<BuildPrevi
 		let found: { url: string; response: Response } | null = null;
 		for (const port of FALLBACK_PORTS) {
 			tried.push(port);
-			const probed = await probeDevAuth(port);
+			const probed = await probeDevAuth(port, server?.workspace);
 			if (probed) {
 				found = { url: `http://127.0.0.1:${port}`, response: probed };
 				break;
