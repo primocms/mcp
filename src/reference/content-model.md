@@ -20,7 +20,6 @@ name: Blog Post
 icon: lucide:file-text
 color: '#2563eb'
 allowed_blocks:
-  - hero
   - body
 ```
 
@@ -39,6 +38,8 @@ Page-level field definitions live in `page-types/{name}/fields.yaml` as a bare l
 ```
 
 `allowed_blocks` is the list of block folder names offered by the editor's add-block picker for pages of this type.
+
+Include a block only when editors should be able to add another instance to the page body. Shared Navigation/Footer and once-per-page heroes normally stay out of this list; they can still be referenced by layouts or pages. See `recommended-defaults` for field-scope and page-type design guidance.
 
 If `allowed_blocks` is omitted or empty, the page type is treated as static: the editor offers no blocks for new sections, and the `body:` sections in `layout.yaml` are locked (editors cannot add, remove, or reorder them). This is valid and should not be treated as a schema error.
 
