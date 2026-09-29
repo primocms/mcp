@@ -29,6 +29,7 @@
 	"scripts": {
 		"build": "node scripts/sync-field-types.mjs && tsc && node scripts/copy-reference.mjs",
 		"smoke": "node scripts/smoke-tests.mjs",
+		"test:dev-runtime": "node --test scripts/test-dev-runtime.mjs",
 		"test:resolution": "node scripts/test-svelte-resolution.mjs",
 		"test:null-image": "node scripts/test-null-image-value.mjs",
 		"prepack": "npm run build"
