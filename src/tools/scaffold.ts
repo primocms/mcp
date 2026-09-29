@@ -89,6 +89,8 @@ const emptyLayoutTemplate = `# Sections shared by every page of this type. Add b
 # the same header/footer across all pages of this type. Body sections are
 # seeded onto each newly created page of this type (and locked when the type
 # has no allowed_blocks).
+# Keep shared Navigation/Footer and once-per-page heroes out of allowed_blocks;
+# that list controls which blocks editors can insert into the page body.
 #
 # header:
 #   - block: site-header
@@ -173,7 +175,7 @@ const serverResolvedFieldTypes = new Set(["page-field", "site-field", "page", "p
 export const scaffoldBlockTool = {
 	name: "scaffold_block",
 	description:
-		"Generate ready-to-write component.svelte, config.yaml, fields.yaml, and content.yaml files for a new Primo block. All four files are emitted; content.yaml seeds the editor sidebar preview and is required for every block.",
+		"Generate ready-to-write component.svelte, config.yaml, fields.yaml, and content.yaml files for a new Primo block. All four files are emitted; content.yaml seeds the editor sidebar preview and is required for every block. Read get_docs({section: 'recommended-defaults'}) before choosing fields and placement. Use site-field/page-field references for centrally managed site/page values; use local fields for section-specific content. Add the block to allowed_blocks only when editors should be able to insert another instance. Shared Navigation/Footer belong in layout header/footer; once-per-page heroes normally stay out of the picker.",
 	inputSchema: {
 		type: "object",
 		properties: {
@@ -199,7 +201,7 @@ export const scaffoldBlockTool = {
 export const scaffoldPageTypeTool = {
 	name: "scaffold_page_type",
 	description:
-		"Generate ready-to-write page-types/{name}/config.yaml + page-types/{name}/fields.yaml + page-types/{name}/layout.yaml files for a new Primo page type. config.yaml holds the page type's editor metadata; fields.yaml is a bare list of page-level fields (the same shape as block fields.yaml and site/fields.yaml); layout.yaml is a comment-only stub that documents how to add shared header/footer sections and seed default body sections.",
+		"Generate ready-to-write page-types/{name}/config.yaml + page-types/{name}/fields.yaml + page-types/{name}/layout.yaml files for a new Primo page type. config.yaml holds the page type's editor metadata; fields.yaml is a bare list of page-level fields (the same shape as block fields.yaml and site/fields.yaml); layout.yaml is a comment-only stub that documents how to add shared header/footer sections and seed default body sections. Read get_docs({section: 'recommended-defaults'}) first. Reuse an existing type unless field schema, shared layout, or editing needs differ; content or minor styling differences alone usually do not need a new type.",
 	inputSchema: {
 		type: "object",
 		properties: {
@@ -223,7 +225,7 @@ export const scaffoldPageTypeTool = {
 			allowed_blocks: {
 				type: "array",
 				items: { type: "string" },
-				description: 'Block folder names allowed on this page type. Pass [] explicitly for a static page type.'
+				description: 'Block folder names offered in the add-block picker. Include only blocks editors should be able to insert another instance of; normally exclude shared Navigation/Footer and once-per-page heroes. Layouts and pages may still reference excluded blocks. Pass [] explicitly for a static page type with locked body structure; excluding one block from a non-empty list does not lock that section.'
 			},
 			fields: {
 				type: "array",

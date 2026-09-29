@@ -1,6 +1,31 @@
 # Recommended defaults
 
-Opt-in baseline opinions for building out a fresh Primo site. None of these are enforced — `validate_*` will accept a site without any of them. They exist because most real sites end up needing them, and an agent building a site from scratch should consider them up front.
+Best practices for structuring a Primo site around the editor's needs: choosing site, page, and block fields; deciding which blocks editors can add; and defining page types. Read this before creating a site or changing its content structure. These are design defaults, not validation requirements; adapt them to the site's needs and the user's instructions.
+
+## Choose where content belongs
+
+Give editors one clear place to manage each value. Choose its scope by who owns the content and where it is used, not by which component happens to render it.
+
+| Scope | Use when | Examples | How blocks read it |
+| --- | --- | --- | --- |
+| Site fields | A value is managed centrally across the site. | Logo, navigation links, contact details, social links | A `site-field` reference with `config.field` set to the site field name |
+| Page fields | A value describes the page, especially if multiple blocks or other pages need it. | Title, summary, cover image, author, publication date, SEO metadata | A `page-field` reference with `config.field` set to the page field name |
+| Block fields | A value belongs to one section instance and can differ between instances. | Testimonial quotes, feature lists, CTA text | The section's own field values |
+
+Define site fields in `site/fields.yaml` and their values in `site/content.yaml`. Define page fields in `page-types/{name}/fields.yaml` and populate each page's top-level `fields:` in `pages/*.yaml`. Define block fields in `blocks/{name}/fields.yaml` and populate each section's `content:`.
+
+For example, a post's title and cover image belong in page fields so its hero and article listing can use the same content. A promotional section's heading belongs in block fields if editors should customize each instance. Navigation should reference site fields so changing a link does not require editing every page or page-type layout.
+
+Use `site-field` and `page-field` references instead of copying centrally managed values into each section. Block `content.yaml` supplies preview and insertion defaults only; changing those defaults does not update existing sections. See `content-model` and `field-types` for the exact file shapes and reference syntax.
+
+## Choose page types by editing needs
+
+Create a page type when pages need a different field schema, shared layout, or set of blocks editors can add. Posts, Products, and Landing Pages are useful examples. Reuse an existing type when only content or minor styling differs; do not create a type for every page by default.
+
+- **Fixed structure:** use an empty `allowed_blocks` list when editors should edit content within a predefined structure. The type's body sections are locked against adding, removing, and reordering.
+- **Flexible structure:** list only the blocks editors should be able to insert. Editors can compose the page body from those options.
+
+An empty `allowed_blocks` list makes the whole page type static. Excluding one block from a non-empty list only removes it from the add-block picker; it does not enforce a one-instance limit or lock that section in place.
 
 ## Baseline CSS
 
@@ -21,10 +46,6 @@ Most sites want a small set of site-wide fields the editor can manage centrally.
 Skip any that don't apply. A pure marketing landing page might only need `logo`.
 
 ## Page-type config (`page-types/{name}/config.yaml`)
-
-Set `color` on each page type — the editor uses it to badge pages in the sidebar. Pick a unique hex from the Primo palette (see `scaffold_page_type` description for the full list). Without a color, the badge renders empty.
-
-## Page-type basics
 
 Each page type's `config.yaml` should set:
 
@@ -47,19 +68,23 @@ For specific page types you'll often want more:
 
 ## Blocks and `allowed_blocks`
 
-Two kinds of blocks live in `blocks/`:
+The block availability toggles on a page type control `allowed_blocks`: the blocks offered in the editor's add-block picker. They are not a list of every block used by the page type. Before enabling a block, ask: **Should an editor be able to add another instance of this block to the page body?**
 
-- **Reusable blocks** — meant to be dragged into pages by the editor. Add their folder name to the page type's `allowed_blocks` list. Without that, the block exists but is invisible in the sidebar.
-- **Single-use blocks** — header, footer, one-off promo. These live in `blocks/` but stay out of `allowed_blocks`. The page references them directly in `sections:`.
+- **Shared layout blocks:** put Navigation and Footer in `layout.yaml` under `header:` and `footer:`. Keep them out of `allowed_blocks` by default, and do not repeat them in individual pages. Their implementation can be reused across page types without making them insertable body sections.
+- **Once-per-page or one-off sections:** place a Hero directly in a page's `sections:`, or in `layout.yaml` under `body:` to seed it onto new pages. Keep it out of `allowed_blocks` when editors are not meant to add another hero. Existing pages need their own sections updated; changing layout `body:` only affects newly created pages.
+- **Repeatable body sections:** add Testimonials, Feature Grids, CTAs, and similar blocks to the relevant page type's `allowed_blocks` when editors should be able to insert them. Otherwise they will not appear in the add-block picker.
 
-When you scaffold a new block, decide which kind it is and wire it accordingly. Forgetting to update `allowed_blocks` for a reusable block is the single most common mistake.
+Choose based on intended use, not the block's name. A hero-style promotional section can be repeatable; a particular CTA can be fixed. Keeping a block out of the picker does not prevent a page or layout from referencing it.
+
+For a flexible landing page with shared Navigation/Footer and an initial Hero, `allowed_blocks` might be `[features, testimonials, cta]`. The layout supplies Navigation/Footer and seeds Hero; the picker offers only the sections editors should add.
 
 ## Wiring checklist
 
-When building out a site from a fresh `primo new` scaffold:
+When creating a site or changing its content structure:
 
-1. Add site fields the design depends on (logo, nav, footer at minimum).
-2. For each page type, add the SEO trio plus any type-specific fields.
-3. For each page type, scaffold a header block and a footer block (unless the site is intentionally chromeless) and wire them into `layout.yaml` under `header:`/`footer:` — don't repeat these in individual `pages/*.yaml`. Optionally add `body:` sections in `layout.yaml` to seed sensible default body content for new pages of the type.
-4. For each reusable block, add it to the relevant page type's `allowed_blocks`.
-5. Run `validate_page` on each page and `validate_block` on each block.
+1. Inspect existing fields, blocks, and page types, and reuse them where their purpose fits.
+2. Assign each editable value to site, page, or block scope. Add only fields the site needs, and wire references to shared values.
+3. Choose page types by field schema, layout, and editing needs. Consider the SEO trio and any type-specific fields.
+4. Put shared Navigation/Footer in each relevant type's `layout.yaml`, reusing the same blocks where appropriate. Seed initial body sections if useful; update existing pages separately.
+5. Review every `allowed_blocks` entry against whether editors should be able to add another instance. Leave layout blocks and once-per-page heroes out unless that is intentionally supported.
+6. Run `validate_page` on affected pages, `validate_block` on affected blocks, and `validate_site` for site-level changes. Then review the editing experience: centrally managed content has one source, page fields describe the page, and the picker offers useful additions. Passing validation alone does not establish a good content model.
