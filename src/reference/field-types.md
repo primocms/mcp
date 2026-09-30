@@ -264,15 +264,17 @@ All pages of a configured page type. Component value is an array of page data ob
 
 ## page-field
 
-Reference a page-level field defined on the current page type. Set `config.field` to the page-type field name.
+Reference a page-level field defined on a page type. Set `config.field` to `<page-type-folder>--<field-key>`: the page type's folder under `page-types/`, two dashes, then the field's `name` in that type's `fields.yaml`.
 
 ```yaml
 - name: hero_image
   label: Hero Image
   type: page-field
   config:
-    field: hero_image
+    field: blog-post--hero_image
 ```
+
+A bare field key (`field: hero_image`) only resolves when exactly one page type has that field, and import warns about it; use the compound form so the reference stays unambiguous when the block is reused across page types.
 
 ## site-field
 

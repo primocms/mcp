@@ -50,7 +50,7 @@ If `allowed_blocks` is omitted or empty, the page type is treated as static: the
 - `header` / `footer` — shared sections that render on every page of the type. Do not duplicate them in individual `pages/*.yaml` files.
 - `body` — **seed defaults** for the page body. When a new page of this type is created, the editor copies these onto the page's own sections. If `allowed_blocks` is non-empty (dynamic), editors can then modify them per page; if `allowed_blocks` is empty (static), they are locked.
 
-`body` is seed-only: it never alters pages that already exist, and the renderer sources a page's body from that page's own `sections:`, not from `layout.yaml`. Editing `body:` after pages exist only affects pages created afterward. A `body` block may reference a block that is not in `allowed_blocks` (e.g. a one-off hero) — that is allowed.
+`body` is seed-only: it never alters pages that already exist, and the renderer sources a page's body from that page's own `sections:`, not from `layout.yaml`. Editing `body:` after pages exist only affects pages created afterward. That includes page files you write yourself: a hand-authored `pages/*.yaml` with `sections: []` renders with no body. List the sections it should have in its own `sections:`. A `body` block may reference a block that is not in `allowed_blocks` (e.g. a one-off hero) — that is allowed.
 
 ```yaml
 header:
@@ -75,7 +75,7 @@ Page fields are content that belongs to the page, not to a block. Common uses ar
 
 - Define page fields once in `page-types/{name}/fields.yaml`.
 - Populate them per page via the top-level `fields:` key in `pages/*.yaml`.
-- Read them in a block with a `page-field` field whose `config.field` points to the page field name.
+- Read them in a block with a `page-field` field whose `config.field` is `<page-type-folder>--<field-key>` (e.g. `blog-post--hero_image`).
 
 ```yaml
 # pages/blog/first-post.yaml
@@ -97,7 +97,7 @@ sections: []
   label: Hero Image (from page)
   type: page-field
   config:
-    field: hero_image
+    field: blog-post--hero_image
 ```
 
 ## Pages
