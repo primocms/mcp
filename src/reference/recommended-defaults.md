@@ -9,7 +9,7 @@ Give editors one clear place to manage each value. Choose its scope by who owns 
 | Scope | Use when | Examples | How blocks read it |
 | --- | --- | --- | --- |
 | Site fields | A value is managed centrally across the site. | Logo, navigation links, contact details, social links | A `site-field` reference with `config.field` set to the site field name |
-| Page fields | A value describes the page, especially if multiple blocks or other pages need it. | Title, summary, cover image, author, publication date, SEO metadata | A `page-field` reference with `config.field` set to the page field name |
+| Page fields | A value describes the page, especially if multiple blocks or other pages need it. | Title, summary, cover image, author, publication date, SEO metadata | A `page-field` reference with `config.field` set to `<page-type-folder>--<field-key>` |
 | Block fields | A value belongs to one section instance and can differ between instances. | Testimonial quotes, feature lists, CTA text | The section's own field values |
 
 Define site fields in `site/fields.yaml` and their values in `site/content.yaml`. Define page fields in `page-types/{name}/fields.yaml` and populate each page's top-level `fields:` in `pages/*.yaml`. Define block fields in `blocks/{name}/fields.yaml` and populate each section's `content:`.
