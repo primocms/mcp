@@ -390,8 +390,8 @@ async function compilePages(graph: SiteGraph, tempDir: string): Promise<Array<{ 
 		const sections = deduplicateById([...headerSections, ...bodySections, ...footerSections]);
 
 		const siteData = {
-			...(contentFor(graph, { kind: "site", entity: graph.site })["en"] ?? {}),
-			...(contentFor(graph, { kind: "page", entity: page })["en"] ?? {})
+			...(contentFor(graph, { kind: "site", entity: graph.site }, { page })["en"] ?? {}),
+			...(contentFor(graph, { kind: "page", entity: page }, { page })["en"] ?? {})
 		};
 
 		const head = {
@@ -715,8 +715,12 @@ function contentFor(
 
 // Test-only seam: lets scripts drive the pure content-building logic against a
 // hand-built graph without a live API. Not part of the public tool surface.
-export function __test_buildSiteContent(graph: SiteGraph): Record<string, Record<string, unknown>> {
-	return contentFor(graph, { kind: "site", entity: graph.site });
+export function __test_buildSiteContent(graph: SiteGraph, options: { page?: PageRecord } = {}): Record<string, Record<string, unknown>> {
+	return contentFor(graph, { kind: "site", entity: graph.site }, options);
+}
+
+export function __test_compilePages(graph: SiteGraph, tempDir: string) {
+	return compilePages(graph, tempDir);
 }
 
 function buildContent(
@@ -732,6 +736,8 @@ function buildContent(
 	entries: EntryRecord[],
 	options: { page?: PageRecord; parentField?: FieldRecord; parentEntry?: EntryRecord } = {}
 ): Record<string, Record<string, unknown>> {
+	// Preserve the viewed page when following references to other pages.
+	const currentPage = options.page;
 	const content: Record<string, Record<string, unknown>> = {};
 	const filteredFields = fields
 		.filter((field) => (options.parentField ? field.parent === options.parentField.id : !field.parent))
@@ -750,7 +756,7 @@ function buildContent(
 			const sourcePage = options.page ?? (target.kind === "page_section" ? graph.pages.find((page) => page.id === target.entity.page) : undefined);
 			if (!sourcePage) continue;
 
-			const sourceContent = contentFor(graph, { kind: "page", entity: sourcePage });
+			const sourceContent = contentFor(graph, { kind: "page", entity: sourcePage }, { page: currentPage });
 			if (!content.en) content.en = {};
 			content.en[field.key] = sourceContent.en?.[sourceField.key] ?? getEmptyValue(sourceField);
 			continue;
@@ -761,7 +767,7 @@ function buildContent(
 			const sourceField = sourceFieldId ? graph.siteFields.find((candidate) => candidate.id === sourceFieldId) : undefined;
 			if (!sourceField?.key) continue;
 
-			const sourceContent = contentFor(graph, { kind: "site", entity: graph.site });
+			const sourceContent = contentFor(graph, { kind: "site", entity: graph.site }, { page: currentPage });
 			if (!content.en) content.en = {};
 			content.en[field.key] = sourceContent.en?.[sourceField.key];
 			continue;
@@ -846,7 +852,7 @@ function buildContent(
 			const pageId = normalizeEntryValue(entry.value);
 			const page = typeof pageId === "string" ? graph.pages.find((candidate) => candidate.id === pageId) : undefined;
 			if (!page) continue;
-			const pageContent = contentFor(graph, { kind: "page", entity: page });
+			const pageContent = contentFor(graph, { kind: "page", entity: page }, { page: currentPage });
 			localeContent(content, entry.locale || "en")[field.key] = {
 				...(pageContent[entry.locale || "en"] ?? {}),
 				_meta: pageMeta(graph, page)
@@ -860,7 +866,7 @@ function buildContent(
 			const pages = graph.pages.filter((page) => page.page_type === pageTypeId).sort(sortByIndex);
 			if (!content.en) content.en = {};
 			content.en[field.key] = pages.map((page) => ({
-				...(contentFor(graph, { kind: "page", entity: page }).en ?? {}),
+				...(contentFor(graph, { kind: "page", entity: page }, { page: currentPage }).en ?? {}),
 				_meta: pageMeta(graph, page)
 			}));
 			continue;
@@ -886,7 +892,8 @@ function buildContent(
 			localeContent(content, entry.locale || "en")[field.key] = {
 				url,
 				label,
-				text: label
+				text: label,
+				active: !!linkedPage && linkedPage.id === currentPage?.id
 			};
 			continue;
 		}
@@ -1015,7 +1022,7 @@ function getEmptyValue(field: FieldRecord): unknown {
 	if (field.type === "text") return "";
 	if (field.type === "markdown") return "";
 	if (field.type === "rich-text") return "";
-	if (field.type === "link") return { label: "", text: "", url: "" };
+	if (field.type === "link") return { label: "", text: "", url: "", active: false };
 	if (field.type === "url") return "";
 	if (field.type === "select") return "";
 	if (field.type === "switch") return true;
