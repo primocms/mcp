@@ -90,7 +90,7 @@ config:
 
 ## link
 
-URL or internal page link with a label. Component value is `{ url, label, text }`.
+URL or internal page link with a label. Component value is `{ url, label, text, active }`.
 
 Two shapes in exported source:
 
@@ -113,13 +113,27 @@ Two shapes in exported source:
     page: a3qvuy5z3q24p7y
   ```
 
-Either shape produces the same `{ url, label, text }` value in the component. Because
+Either shape produces the same `{ url, label, text, active }` value in the component. Because
 an internal link can resolve to an empty string transiently (while its page loads),
 always guard: `{#if link?.url}` and `link?.label`.
 
 ```svelte
 {#if cta?.url}
   <a href={cta.url} data-key="cta">{cta.label}</a>
+{/if}
+```
+
+`active` is computed when rendering: it is `true` only when a `page` reference
+points to the current page. URL-only, missing, and empty links are inactive, as
+are previews without a current page. Shared navigation resolves separately for
+each page. Do not store `active` in YAML content.
+
+```svelte
+{#if nav_link?.url}
+  <a href={nav_link.url} class:active={nav_link.active}
+     aria-current={nav_link.active ? 'page' : undefined}>
+    {nav_link.label}
+  </a>
 {/if}
 ```
 
