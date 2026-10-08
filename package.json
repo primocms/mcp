@@ -32,6 +32,7 @@
 		"test:dev-runtime": "node --test scripts/test-dev-runtime.mjs",
 		"test:resolution": "node scripts/test-svelte-resolution.mjs",
 		"test:null-image": "node scripts/test-null-image-value.mjs",
+		"test:image-focal-point": "node --test scripts/test-image-focal-point.mjs",
 		"test:link-active": "node --test scripts/test-link-active.mjs",
 		"prepack": "npm run build"
 	},

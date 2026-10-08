@@ -331,12 +331,12 @@ function validateImageValue(value: unknown, file: string, context: string): Vali
 
 	const errors: ValidationError[] = [];
 	for (const key of Object.keys(value)) {
-		if (!["url", "alt", "width", "height", "upload"].includes(key)) {
+		if (!["url", "alt", "width", "height", "upload", "focal_point"].includes(key)) {
 			errors.push({
 				file,
 				severity: "warning",
 				message: `${context}.${key} is not part of the canonical image shape.`,
-				fix_hint: "Use only url, alt, width, height, and upload on image values."
+				fix_hint: "Use only url, alt, width, height, upload, and focal_point on image values."
 			});
 		}
 	}
@@ -353,6 +353,12 @@ function validateImageValue(value: unknown, file: string, context: string): Vali
 	if ("height" in value && value.height !== null && typeof value.height !== "number") {
 		errors.push(expectedTypeError(file, `${context}.height`, "number or null", value.height));
 	}
+	if ("upload" in value && value.upload !== null && typeof value.upload !== "string") {
+		errors.push(expectedTypeError(file, `${context}.upload`, "string or null", value.upload));
+	}
+	if ("focal_point" in value) {
+		errors.push(...validateImageFocalPoint(value.focal_point, file, `${context}.focal_point`));
+	}
 	if (!("url" in value)) {
 		errors.push({
 			file,
@@ -362,6 +368,23 @@ function validateImageValue(value: unknown, file: string, context: string): Vali
 		});
 	}
 
+	return errors;
+}
+
+function validateImageFocalPoint(value: unknown, file: string, context: string): ValidationError[] {
+	if (!isPlainObject(value)) return [expectedTypeError(file, context, "an object with x and y fractions", value)];
+	const errors: ValidationError[] = [];
+	for (const coordinate of ["x", "y"] as const) {
+		const fraction = value[coordinate];
+		if (typeof fraction !== "number" || !Number.isFinite(fraction) || fraction < 0 || fraction > 1) {
+			errors.push({
+				file,
+				severity: "error",
+				message: `${context}.${coordinate} must be a finite number from 0 to 1.`,
+				fix_hint: "Use focal_point: { x: 0.5, y: 0.5 } for the center, or omit focal_point."
+			});
+		}
+	}
 	return errors;
 }
 
@@ -580,8 +603,17 @@ function resolveImage(raw: unknown): ResolveFieldValueResult {
 	if (typeof raw.height === "number" || raw.height === null) {
 		canonical.height = raw.height;
 	}
+	if (typeof raw.upload === "string" || raw.upload === null) {
+		canonical.upload = raw.upload;
+	} else if ("upload" in raw) {
+		warnings.push(`Expected image.upload to be a string or null; got ${describeValueType(raw.upload)}.`);
+	}
+	if ("focal_point" in raw) {
+		canonical.focal_point = raw.focal_point;
+		warnings.push(...validateImageFocalPoint(raw.focal_point, "", "focal_point").map(error => error.message));
+	}
 
-	const stripped = Object.keys(raw).filter((key) => !["url", "alt", "width", "height"].includes(key));
+	const stripped = Object.keys(raw).filter((key) => !(key in canonical));
 	if (stripped.length > 0) {
 		warnings.push(`Stripped unsupported image key${stripped.length === 1 ? "" : "s"}: ${stripped.join(", ")}.`);
 	}

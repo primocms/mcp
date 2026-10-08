@@ -43,7 +43,7 @@ Markdown editor. Component value renders as HTML.
 
 ## image
 
-Image upload or external image. Component value is `{ url, alt, width, height }`.
+Image upload or external image. Component values include `url`, `alt`, `focal_point`, and `position`.
 
 Two ways to supply the image:
 
@@ -79,6 +79,26 @@ Render the resolved value the same way regardless of source:
   <img src={image.url} alt={image.alt} data-key="image" />
 {/if}
 ```
+
+Image values can store an optional `focal_point: { x, y }`, with both coordinates
+as fractions from 0 to 1 of the original image. A missing point means the center.
+The editor stores the point on the field entry, so one upload can have different
+focal points in different fields. Preserve it when editing the image's URL or alt
+text; `resolve_field_value` keeps both the point and the upload reference.
+
+Blocks receive a normalized `focal_point` and a derived CSS `position` string,
+including on empty images. Coordinates are clamped to 0..1 and rounded to three
+decimals when rendering. For example, `{ x: 0.375, y: 0.62 }` gives `"37.5% 62%"`;
+missing or malformed coordinates default to `0.5` (`"50% 50%"` at the center).
+Use `position` to keep the selected point visible when cropping:
+
+```svelte
+{#if image?.url}
+  <img src={image.url} alt={image.alt} style:object-fit="cover" style:object-position={image.position} />
+{/if}
+```
+
+`position` is derived for rendering; store only `focal_point` in YAML content.
 
 Optional image config:
 

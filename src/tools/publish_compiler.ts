@@ -835,9 +835,12 @@ function buildContent(
 			const uploadId = typeof image.upload === "string" ? image.upload : "";
 			const upload = uploadId ? graph.uploads.find((candidate) => candidate.id === uploadId) : undefined;
 			const url = typeof image.url === "string" && image.url ? image.url : upload ? `/_uploads/${upload.file}` : "";
+			const focal_point = getImageFocalPoint(image);
 			localeContent(content, entry.locale || "en")[field.key] = {
 				alt: typeof image.alt === "string" ? image.alt : "",
-				url
+				url,
+				focal_point,
+				position: getImagePosition(focal_point)
 			};
 			continue;
 		}
@@ -1015,10 +1018,24 @@ async function uploadTextFileField(
 	}
 }
 
+// Match the CMS's get_focal_point/get_focal_position: tolerate legacy values,
+// clamp each coordinate to 0..1 and round to three decimals before rendering.
+function getImageFocalPoint(image: Record<string, unknown>): { x: number; y: number } {
+	const point = image.focal_point as { x?: unknown; y?: unknown } | null | undefined;
+	const fraction = (value: unknown) => typeof value === "number" && Number.isFinite(value)
+		? Math.round(Math.min(1, Math.max(0, value)) * 1000) / 1000
+		: 0.5;
+	return { x: fraction(point?.x), y: fraction(point?.y) };
+}
+
+function getImagePosition({ x, y }: { x: number; y: number }): string {
+	return `${Math.round(x * 1000) / 10}% ${Math.round(y * 1000) / 10}%`;
+}
+
 function getEmptyValue(field: FieldRecord): unknown {
 	if (field.type === "repeater") return [];
 	if (field.type === "group") return {};
-	if (field.type === "image") return { url: "", src: "", alt: "", size: null, width: null, height: null };
+	if (field.type === "image") return { url: "", src: "", alt: "", size: null, width: null, height: null, focal_point: { x: 0.5, y: 0.5 }, position: "50% 50%" };
 	if (field.type === "text") return "";
 	if (field.type === "markdown") return "";
 	if (field.type === "rich-text") return "";
