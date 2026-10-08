@@ -93,7 +93,9 @@ missing or malformed coordinates default to `0.5` (`"50% 50%"` at the center).
 Use `position` to keep the selected point visible when cropping:
 
 ```svelte
-<img src={image.url} alt={image.alt} style:object-fit="cover" style:object-position={image.position} />
+{#if image?.url}
+  <img src={image.url} alt={image.alt} style:object-fit="cover" style:object-position={image.position} />
+{/if}
 ```
 
 `position` is derived for rendering; store only `focal_point` in YAML content.

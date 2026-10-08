@@ -89,6 +89,22 @@ test('resolve_field_value keeps saved focal points and upload references', () =>
 	assert.deepEqual(resolveFieldValue({ type: 'image', raw: { url: '/old.jpg', alt: '' } }).canonical, { url: '/old.jpg', alt: '' });
 });
 
+test('resolve_field_value reports discarded invalid upload references', () => {
+	for (const upload of ['uploads/hero.jpg', null]) {
+		assert.deepEqual(validateContentAgainstFields({ image: { url: '', upload } }, [{ name: 'image', type: 'image' }], { file: 'content.yaml', context: 'content' }), []);
+		const result = resolveFieldValue({ type: 'image', raw: { url: '', upload } });
+		assert.equal(result.canonical.upload, upload);
+		assert.deepEqual(result.warnings, []);
+	}
+	for (const upload of [42, {}, [], true]) {
+		assert(validateContentAgainstFields({ image: { url: '', upload } }, [{ name: 'image', type: 'image' }], { file: 'content.yaml', context: 'content' }).some(error => error.severity === 'error' && error.message.includes('upload')));
+		const result = resolveFieldValue({ type: 'image', raw: { url: '', upload } });
+		assert.equal('upload' in result.canonical, false);
+		assert(result.warnings.some(warning => warning.includes('Expected image.upload')));
+		assert(result.warnings.some(warning => warning.includes('Stripped unsupported image key: upload')));
+	}
+});
+
 test('image validation and schema accept valid focal points and reject malformed ones', async () => {
 	const fields = [{ name: 'image', type: 'image' }];
 	const options = { file: 'content.yaml', context: 'content' };

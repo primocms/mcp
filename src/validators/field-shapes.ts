@@ -353,6 +353,9 @@ function validateImageValue(value: unknown, file: string, context: string): Vali
 	if ("height" in value && value.height !== null && typeof value.height !== "number") {
 		errors.push(expectedTypeError(file, `${context}.height`, "number or null", value.height));
 	}
+	if ("upload" in value && value.upload !== null && typeof value.upload !== "string") {
+		errors.push(expectedTypeError(file, `${context}.upload`, "string or null", value.upload));
+	}
 	if ("focal_point" in value) {
 		errors.push(...validateImageFocalPoint(value.focal_point, file, `${context}.focal_point`));
 	}
@@ -602,13 +605,15 @@ function resolveImage(raw: unknown): ResolveFieldValueResult {
 	}
 	if (typeof raw.upload === "string" || raw.upload === null) {
 		canonical.upload = raw.upload;
+	} else if ("upload" in raw) {
+		warnings.push(`Expected image.upload to be a string or null; got ${describeValueType(raw.upload)}.`);
 	}
 	if ("focal_point" in raw) {
 		canonical.focal_point = raw.focal_point;
 		warnings.push(...validateImageFocalPoint(raw.focal_point, "", "focal_point").map(error => error.message));
 	}
 
-	const stripped = Object.keys(raw).filter((key) => !["url", "alt", "width", "height", "upload", "focal_point"].includes(key));
+	const stripped = Object.keys(raw).filter((key) => !(key in canonical));
 	if (stripped.length > 0) {
 		warnings.push(`Stripped unsupported image key${stripped.length === 1 ? "" : "s"}: ${stripped.join(", ")}.`);
 	}
