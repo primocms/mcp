@@ -88,4 +88,4 @@ Blocks, fields, pages, page types, and sections all have system-owned `_id` valu
 2. Edit blocks, pages, page types, or site settings.
 3. Let `primo dev` sync changes — it reports each import and triggers a browser reload.
 4. Call the `build_preview` MCP tool to regenerate the published preview, then load the returned site URL to verify visually.
-5. Run `primo push` to deploy changes to a live server when connected.
+5. Run `primo push` to save hosted draft changes. Use `primo push --publish` to upload and publish, or `primo publish` to publish the current hosted draft without uploading local files. Check `primo status --hosted --json` for draft and publication state. A failed publication leaves a successful push saved; retry `primo publish` after fixing the error.
