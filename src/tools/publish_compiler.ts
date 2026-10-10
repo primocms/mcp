@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -225,7 +226,7 @@ export async function compileAndUploadPublishArtifacts(
 			)
 		);
 
-		const pageArtifacts = await compilePages(graph, tempDir);
+		const pageArtifacts = await compilePages(graph, tempDir, symbolVersions(symbolArtifacts));
 		await Promise.all(
 			pageArtifacts.map((artifact) =>
 				uploadTextFileField(apiUrl, token, "pages", artifact.pageId, "compiled_html", artifact.html, "index.html", "text/html")
@@ -369,7 +370,13 @@ async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<Array<
 	return artifacts;
 }
 
-async function compilePages(graph: SiteGraph, tempDir: string): Promise<Array<{ pageId: string; html: string; isHomepage: boolean }>> {
+// Version imports by the exact uploaded bytes so cached client code cannot
+// hydrate new server markup with obsolete Svelte CSS class names.
+function symbolVersions(artifacts: Array<{ symbolId: string; js: string }>): Map<string, string> {
+	return new Map(artifacts.map(({ symbolId, js }) => [symbolId, createHash("sha256").update(js).digest("hex")]));
+}
+
+async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<string, string>): Promise<Array<{ pageId: string; html: string; isHomepage: boolean }>> {
 	const artifacts: Array<{ pageId: string; html: string; isHomepage: boolean }> = [];
 
 	for (const page of graph.pages) {
@@ -430,7 +437,7 @@ async function compilePages(graph: SiteGraph, tempDir: string): Promise<Array<{ 
 				.filter((symbol): symbol is SymbolRecord => !!symbol && !!symbol.js)
 		);
 		const hydrationScript = symbolsWithJs.length > 0
-			? `<script type="module">${buildHydrationScript(graph, sections, page, symbolsWithJs)}</script>`
+			? `<script type="module">${buildHydrationScript(graph, sections, page, symbolsWithJs, versions)}</script>`
 			: "";
 
 		const html =
@@ -487,7 +494,8 @@ function buildHydrationScript(
 	graph: SiteGraph,
 	sections: SectionRecord[],
 	page: PageRecord,
-	symbols: SymbolRecord[]
+	symbols: SymbolRecord[],
+	versions: Map<string, string>
 ): string {
 	return symbols
 		.map((symbol) => {
@@ -499,7 +507,9 @@ function buildHydrationScript(
 				})
 				.join("");
 
-			return `import('/_symbols/${jsStringEscape(symbol.id)}.js').then(({ default: App, hydrate }) => {${sectionHydration}}).catch(e => console.error(e));`;
+			const version = versions.get(symbol.id);
+			if (!version) throw new Error(`Missing compiled script for symbol ${symbol.id}.`);
+			return `import('/_symbols/${jsStringEscape(symbol.id)}.js?v=${version}').then(({ default: App, hydrate }) => {${sectionHydration}}).catch(e => console.error(e));`;
 		})
 		.join("");
 }
@@ -719,8 +729,9 @@ export function __test_buildSiteContent(graph: SiteGraph, options: { page?: Page
 	return contentFor(graph, { kind: "site", entity: graph.site }, options);
 }
 
-export function __test_compilePages(graph: SiteGraph, tempDir: string) {
-	return compilePages(graph, tempDir);
+export async function __test_compilePages(graph: SiteGraph, tempDir: string) {
+	const artifacts = await compileSymbols(graph, tempDir);
+	return compilePages(graph, tempDir, symbolVersions(artifacts));
 }
 
 function buildContent(

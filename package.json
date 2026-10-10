@@ -34,6 +34,7 @@
 		"test:null-image": "node scripts/test-null-image-value.mjs",
 		"test:image-focal-point": "node --test scripts/test-image-focal-point.mjs",
 		"test:link-active": "node --test scripts/test-link-active.mjs",
+		"test:publish-cache": "node --test scripts/test-publish-cache-version.mjs scripts/test-publish-cache-browser.mjs",
 		"prepack": "npm run build"
 	},
 	"engines": {
@@ -50,6 +51,7 @@
 		"svelte": "^5.55.5"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.63.0",
 		"@types/markdown-it": "^14.1.2",
 		"@types/node": "^25.6.0",
 		"typescript": "^6.0.3"

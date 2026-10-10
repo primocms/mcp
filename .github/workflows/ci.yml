@@ -20,3 +20,5 @@ jobs:
       - run: npm run build
       - run: npm run test:resolution
       - run: npm run test:image-focal-point
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:publish-cache
