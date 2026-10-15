@@ -49,6 +49,7 @@ for (const reverse of [false, true]) {
       assert.equal(await page.evaluate(() => window.ssrHeadings.every((node, i) => node === document.querySelectorAll('h1')[i] && node.isConnected)), true);
       assert.equal(await page.evaluate(() => window.ssrMeta.every(node => node.isConnected)), true);
       assert.equal(await page.locator('meta[name="section-title"]').count(), 6);
+      assert.deepEqual(await page.locator('meta[name="section-title"]').evaluateAll(nodes => nodes.map(node => node.content)), ['Header headline', 'First headline', 'Client section 1', 'Client section 2', 'Client section 3', 'Client section 4']);
       assert.equal(await page.title(), 'Client site');
       for (const button of await page.locator('button').all()) {
         await button.click();
