@@ -185,6 +185,7 @@ type SiteGraph = {
 };
 
 type ComponentInput = {
+	filename: string;
 	html: string;
 	js: string;
 	css: string;
@@ -356,6 +357,7 @@ async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<Array<
 
 		const js = await compileClientBundle(
 			{
+				filename: `symbol-${symbol.id}.svelte`,
 				html: symbol.html,
 				js: symbol.js,
 				css: processedCss,
@@ -405,26 +407,11 @@ async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<str
 			code: `<style data-primo-baseline>${PRIMO_BASELINE_CSS}</style>${graph.site.head ?? ""}${pageType.head ?? ""}`,
 			data: siteData
 		};
-		const headWithoutCode = {
-			code: "",
-			data: siteData
-		};
-
-		const headerResult = headerSections.length > 0
-			? await compileSectionGroup(graph, headerSections, page, head, tempDir)
-			: { body: "", head: "" };
-		const bodyResult = bodySections.length > 0
-			? await compileSectionGroup(graph, bodySections, page, headerSections.length > 0 ? headWithoutCode : head, tempDir)
-			: { body: "", head: "" };
-		const footerResult = footerSections.length > 0
-			? await compileSectionGroup(
-					graph,
-					footerSections,
-					page,
-					headerSections.length > 0 || bodySections.length > 0 ? headWithoutCode : head,
-					tempDir
-				)
-			: { body: "", head: "" };
+		const pageHead = await compileServerBundle([], head, tempDir);
+		const emptyHead = { code: "", data: siteData };
+		const headerResult = await compileSectionGroup(graph, headerSections, page, emptyHead, tempDir);
+		const bodyResult = await compileSectionGroup(graph, bodySections, page, emptyHead, tempDir);
+		const footerResult = await compileSectionGroup(graph, footerSections, page, emptyHead, tempDir);
 
 		const bodyContent =
 			(headerResult.body ? `<header>${headerResult.body}</header>` : "") +
@@ -442,6 +429,7 @@ async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<str
 
 		const html =
 			`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Primo" />` +
+			pageHead.head +
 			(headerResult.head || "") +
 			(bodyResult.head || "") +
 			(footerResult.head || "") +
@@ -476,6 +464,7 @@ async function compileSectionGroup(
 
 		const data = contentFor(graph, sectionKind(section), { page })["en"] ?? {};
 		components.push({
+			filename: `symbol-${symbol.id}.svelte`,
 			html: symbol.html,
 			js: symbol.js,
 			css: await processCss(symbol.css || ""),
@@ -517,8 +506,8 @@ function buildHydrationScript(
 async function compileClientBundle(component: ComponentInput, tempDir: string): Promise<string> {
 	return bundleVirtualProject({
 		files: new Map([
-			["./entry.js", `export { default } from './App.svelte';\nexport { hydrate } from 'svelte';`],
-			["./App.svelte", componentSource(component)]
+			["./entry.js", `export { default } from './${component.filename}';\nexport { hydrate } from 'svelte';`],
+			[`./${component.filename}`, componentSource(component)]
 		]),
 		svelteOptions: {
 			generate: "client",
@@ -536,10 +525,12 @@ async function compileServerBundle(
 	tempDir: string
 ): Promise<{ body: string; head: string }> {
 	const files = new Map<string, string>();
-	files.set("./entry.js", `export { default } from './App.svelte';`);
-	files.set("./App.svelte", appWrapperSource(components, head));
-	components.forEach((component, index) => {
-		files.set(`./Component_${index}.svelte`, componentSource(component));
+	files.set("./entry.js", `export { default } from './App.svelte';\n` + components.map((component, index) =>
+		`export { default as component_${index} } from './${component.filename}';`
+	).join("\n"));
+	files.set("./App.svelte", appWrapperSource([], head));
+	components.forEach((component) => {
+		files.set(`./${component.filename}`, componentSource(component));
 	});
 
 	const code = await bundleVirtualProject({
@@ -557,22 +548,18 @@ async function compileServerBundle(
 	await fs.writeFile(bundlePath, code);
 	const module = (await import(`${pathToFileURL(bundlePath).href}?t=${Date.now()}`)) as { default: unknown };
 
-	const props: Record<string, unknown> = {};
-	components.forEach((component, index) => {
-		if (Object.keys(component.data).length > 0) {
-			props[`component_${index}_props`] = component.data;
-		}
-	});
-	props.head_props = head.data;
-
-	const rendered = (render as (component: unknown, options: { props: Record<string, unknown> }) => { body: string; head: string })(
-		module.default,
-		{ props }
-	);
-	return {
-		body: rendered.body,
-		head: rendered.head
-	};
+	// Each section is hydrated independently. Render the same component as an
+	// independent server root so hydration retains its DOM and content.
+	const renderComponent = render as (component: unknown, options: { props: Record<string, unknown> }) => { body: string; head: string };
+	const result = renderComponent(module.default, { props: { head_props: head.data } });
+	let body = "";
+	let renderedHead = result.head;
+	for (const [index, component] of components.entries()) {
+		const rendered = renderComponent((module as unknown as Record<string, unknown>)[`component_${index}`], { props: component.data });
+		body += (component.wrapper_start ?? "") + rendered.body + (component.wrapper_end ?? "");
+		renderedHead += rendered.head;
+	}
+	return { body, head: renderedHead };
 }
 
 // Exported for scripts/test-svelte-resolution.mjs. `packageRoot` overrides the
@@ -633,13 +620,12 @@ export async function bundleVirtualProject({
 						if (source === undefined) return undefined;
 
 						if (args.path.endsWith(".svelte")) {
-							// Don't pass `filename` — Svelte's default cssHash falls back to hashing the CSS
-							// when filename is unknown, which gives each component a unique scoped class.
-							// Passing the virtual filename made all `./Component_N.svelte` files share a hash
-							// across the header/body/footer bundles, producing duplicate `<style id>` blocks
-							// that one zone's hydration would clobber, leaving the others unstyled.
+							// Symbol identity must match in server and client builds, including
+							// head IDs and CSS scopes across independently rendered sections.
 							const compiled = compile(source, {
-								...svelteOptions
+								...svelteOptions,
+								filename: args.path,
+								cssHash: ({ filename, css, hash }) => `svelte-${hash(filename + css)}`
 							});
 							return {
 								contents: compiled.js.code,

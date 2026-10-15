@@ -35,7 +35,8 @@
 		"test:image-focal-point": "node --test scripts/test-image-focal-point.mjs",
 		"test:link-active": "node --test scripts/test-link-active.mjs",
 		"test:publish-cache": "node --test scripts/test-publish-cache-version.mjs scripts/test-publish-cache-browser.mjs",
-		"prepack": "npm run build"
+		"prepack": "npm run build",
+		"test:publish-hydration": "node --test scripts/test-publish-hydration.mjs"
 	},
 	"engines": {
 		"node": ">=18.18"
