@@ -1,6 +1,6 @@
 {
 	"name": "primo-mcp",
-	"version": "0.1.10",
+	"version": "0.1.11-rc.2",
 	"description": "Official Primo MCP server for live, versioned docs and validation in exported Primo sites.",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -35,20 +35,21 @@
 		"test:image-focal-point": "node --test scripts/test-image-focal-point.mjs",
 		"test:link-active": "node --test scripts/test-link-active.mjs",
 		"test:publish-cache": "node --test scripts/test-publish-cache-version.mjs scripts/test-publish-cache-browser.mjs",
-		"prepack": "npm run build"
+		"prepack": "npm run build",
+		"test:publish-hydration": "node --test scripts/test-publish-hydration.mjs"
 	},
 	"engines": {
 		"node": ">=18.18"
 	},
 	"dependencies": {
-		"@modelcontextprotocol/sdk": "^1.29.0",
+		"@modelcontextprotocol/sdk": "^1.31.0",
 		"ajv": "^8.20.0",
-		"esbuild": "^0.28.0",
-		"js-yaml": "^4.1.1",
-		"markdown-it": "^14.1.1",
-		"postcss": "^8.5.12",
+		"esbuild": "^0.28.2",
+		"js-yaml": "^4.3.2",
+		"markdown-it": "^14.3.2",
+		"postcss": "^8.5.23",
 		"postcss-nested": "^7.0.2",
-		"svelte": "^5.55.5"
+		"svelte": "^5.55.7"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.63.0",
