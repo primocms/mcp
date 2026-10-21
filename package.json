@@ -34,8 +34,9 @@
 		"test:null-image": "node scripts/test-null-image-value.mjs",
 		"test:image-focal-point": "node --test scripts/test-image-focal-point.mjs",
 		"test:link-active": "node --test scripts/test-link-active.mjs",
-		"test:publish-cache": "node --test scripts/test-publish-cache-version.mjs scripts/test-publish-cache-browser.mjs",
+		"test:publish-cache": "node --test scripts/test-publish-cache-version.mjs scripts/test-publish-cache-browser.mjs scripts/test-incremental-publish.mjs scripts/test-incremental-publish-cms.mjs",
 		"prepack": "npm run build",
+		"benchmark:publish": "npm run build && node scripts/benchmark-publish.mjs",
 		"test:publish-hydration": "node --test scripts/test-publish-hydration.mjs"
 	},
 	"engines": {
