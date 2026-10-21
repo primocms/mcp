@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -10,6 +11,7 @@ import postcss from "postcss";
 import postcssNested from "postcss-nested";
 import * as svelteCompiler from "svelte/compiler";
 import { render } from "svelte/server";
+import { cachedScriptVersion, pageFileMatches, pageFileName, scriptFileName } from "./publish-cache.js";
 
 const { compile } = svelteCompiler;
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -97,6 +99,7 @@ export type SiteRecord = RecordBase & {
 	host?: string;
 	head?: string;
 	foot?: string;
+	preview?: string;
 };
 
 type PageRecord = RecordBase & {
@@ -106,6 +109,8 @@ type PageRecord = RecordBase & {
 	page_type: string;
 	site: string;
 	index?: number;
+	compiled_html?: string;
+	compiled_html_hash?: string;
 };
 
 type PageTypeRecord = RecordBase & {
@@ -121,6 +126,8 @@ type SymbolRecord = RecordBase & {
 	css: string;
 	js: string;
 	site: string;
+	compiled_js?: string;
+	compiled_js_hash?: string;
 };
 
 type FieldRecord = RecordBase & {
@@ -201,7 +208,23 @@ type CompileHead = {
 type PublishArtifactSummary = {
 	pageCount: number;
 	symbolCount: number;
+	pagesCompiled: number;
+	pagesSkipped: number;
+	symbolsCompiled: number;
+	symbolsSkipped: number;
 };
+
+// Actual shipped compiler code participates in invalidation, including upgrades
+// that don't change authored content. Separate producers cannot share output.
+const COMPILER_PROFILE = ["mcp-publish-v1", svelteCompiler.VERSION, esbuild.version, PRIMO_BASELINE_CSS,
+	createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url)))
+		.update(readFileSync(new URL("./publish-cache.js", import.meta.url))).digest("hex")];
+function inputHash(value: unknown): string {
+	return createHash("sha256").update(JSON.stringify([COMPILER_PROFILE, value])).digest("hex");
+}
+
+type SymbolArtifact = { symbolId: string; hash: string; version: string; js?: string };
+type PageArtifact = { pageId: string; hash: string; html?: string; isHomepage: boolean };
 
 const cssCache = new Map<string, string>();
 const markdown = new MarkdownIt({
@@ -220,27 +243,35 @@ export async function compileAndUploadPublishArtifacts(
 
 	try {
 		const symbolArtifacts = await compileSymbols(graph, tempDir);
+		const changedSymbols = symbolArtifacts.filter((artifact) => artifact.js !== undefined);
 		await Promise.all(
-			symbolArtifacts.map((artifact) =>
-				uploadTextFileField(apiUrl, token, "site_symbols", artifact.symbolId, "compiled_js", artifact.js, "symbol.js", "text/javascript")
+			changedSymbols.map((artifact) =>
+				uploadTextFileField(apiUrl, token, "site_symbols", artifact.symbolId, "compiled_js", artifact.js!, scriptFileName(artifact.hash, artifact.version), "text/javascript",
+					typeof graph.symbols.find((symbol) => symbol.id === artifact.symbolId)?.compiled_js_hash === "string" ? { compiled_js_hash: artifact.hash } : {})
 			)
 		);
 
 		const pageArtifacts = await compilePages(graph, tempDir, symbolVersions(symbolArtifacts));
+		const changedPages = pageArtifacts.filter((artifact) => artifact.html !== undefined);
 		await Promise.all(
-			pageArtifacts.map((artifact) =>
-				uploadTextFileField(apiUrl, token, "pages", artifact.pageId, "compiled_html", artifact.html, "index.html", "text/html")
+			changedPages.map((artifact) =>
+				uploadTextFileField(apiUrl, token, "pages", artifact.pageId, "compiled_html", artifact.html!, pageFileName(artifact.hash), "text/html",
+					typeof graph.pages.find((page) => page.id === artifact.pageId)?.compiled_html_hash === "string" ? { compiled_html_hash: artifact.hash } : {})
 			)
 		);
 
-		const homepage = pageArtifacts.find((artifact) => artifact.isHomepage);
+		const homepage = changedPages.find((artifact) => artifact.isHomepage);
 		if (homepage) {
-			await uploadTextFileField(apiUrl, token, "sites", site.id, "preview", homepage.html, "index.html", "text/html");
+			await uploadTextFileField(apiUrl, token, "sites", site.id, "preview", homepage.html!, pageFileName(homepage.hash), "text/html");
 		}
 
 		return {
 			pageCount: pageArtifacts.length,
-			symbolCount: symbolArtifacts.length
+			symbolCount: symbolArtifacts.length,
+			pagesCompiled: changedPages.length,
+			pagesSkipped: pageArtifacts.length - changedPages.length,
+			symbolsCompiled: changedSymbols.length,
+			symbolsSkipped: symbolArtifacts.length - changedSymbols.length
 		};
 	} finally {
 		await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -338,14 +369,21 @@ async function fetchAll<T>(
 	return items;
 }
 
-async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<Array<{ symbolId: string; js: string }>> {
-	const artifacts: Array<{ symbolId: string; js: string }> = [];
+async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<SymbolArtifact[]> {
+	const artifacts: SymbolArtifact[] = [];
 
 	for (const symbol of graph.symbols) {
 		if (!symbol.js) continue;
 
 		const processedCss = await processCss(symbol.css || "");
 		const symbolFields = graph.symbolFields.filter((field) => field.symbol === symbol.id);
+		const hash = inputHash({ html: symbol.html, js: symbol.js, css: processedCss,
+			fieldKeys: symbolFields.map((field) => field.key).filter(Boolean) });
+		const version = cachedScriptVersion(symbol.compiled_js, symbol.compiled_js_hash, hash);
+		if (version) {
+			artifacts.push({ symbolId: symbol.id, hash, version });
+			continue;
+		}
 		const symbolContent = contentFor(graph, { kind: "symbol", entity: symbol })["en"] ?? {};
 		const genericData = Object.fromEntries(
 			symbolFields
@@ -364,7 +402,7 @@ async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<Array<
 			tempDir
 		);
 
-		artifacts.push({ symbolId: symbol.id, js });
+		artifacts.push({ symbolId: symbol.id, hash, version: createHash("sha256").update(js).digest("hex"), js });
 	}
 
 	return artifacts;
@@ -372,12 +410,12 @@ async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<Array<
 
 // Version imports by the exact uploaded bytes so cached client code cannot
 // hydrate new server markup with obsolete Svelte CSS class names.
-function symbolVersions(artifacts: Array<{ symbolId: string; js: string }>): Map<string, string> {
-	return new Map(artifacts.map(({ symbolId, js }) => [symbolId, createHash("sha256").update(js).digest("hex")]));
+function symbolVersions(artifacts: SymbolArtifact[]): Map<string, string> {
+	return new Map(artifacts.map(({ symbolId, version }) => [symbolId, version]));
 }
 
-async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<string, string>): Promise<Array<{ pageId: string; html: string; isHomepage: boolean }>> {
-	const artifacts: Array<{ pageId: string; html: string; isHomepage: boolean }> = [];
+async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<string, string>): Promise<PageArtifact[]> {
+	const artifacts: PageArtifact[] = [];
 
 	for (const page of graph.pages) {
 		const pageType = graph.pageTypes.find((candidate) => candidate.id === page.page_type);
@@ -400,6 +438,24 @@ async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<str
 			...(contentFor(graph, { kind: "site", entity: graph.site }, { page })["en"] ?? {}),
 			...(contentFor(graph, { kind: "page", entity: page }, { page })["en"] ?? {})
 		};
+
+		const hash = inputHash({
+			page: { id: page.id, name: page.name, slug: page.slug, parent: page.parent, page_type: page.page_type },
+			head: [graph.site.head ?? "", pageType.head ?? ""], foot: graph.site.foot ?? "", data: siteData,
+			sections: await Promise.all(sections.map(async (section) => {
+				const symbol = graph.symbols.find((candidate) => candidate.id === section.symbol);
+				return { id: section.id, symbol: section.symbol, zone: "zone" in section ? section.zone : "body",
+					data: contentFor(graph, sectionKind(section), { page })["en"] ?? {},
+					// Include every source, even blocks without client-side JavaScript.
+					source: symbol ? { html: symbol.html, js: symbol.js, css: await processCss(symbol.css || "") } : null,
+					version: versions.get(section.symbol) ?? null };
+			}))
+		});
+		if (page.compiled_html_hash === hash && pageFileMatches(page.compiled_html, hash) &&
+			(page.parent || pageFileMatches(graph.site.preview, hash))) {
+			artifacts.push({ pageId: page.id, hash, isHomepage: !page.parent });
+			continue;
+		}
 
 		const head = {
 			code: `<style data-primo-baseline>${PRIMO_BASELINE_CSS}</style>${graph.site.head ?? ""}${pageType.head ?? ""}`,
@@ -453,6 +509,7 @@ async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<str
 
 		artifacts.push({
 			pageId: page.id,
+			hash,
 			html,
 			isHomepage: !page.parent
 		});
@@ -1011,10 +1068,12 @@ async function uploadTextFileField(
 	field: string,
 	contents: string,
 	fileName: string,
-	contentType: string
+	contentType: string,
+	metadata: Record<string, string> = {}
 ): Promise<void> {
 	const form = new FormData();
 	form.append(field, new Blob([contents], { type: contentType }), fileName);
+	for (const [key, value] of Object.entries(metadata)) form.append(key, value);
 
 	const response = await fetch(`${apiUrl}/api/collections/${collection}/records/${recordId}`, {
 		method: "PATCH",
