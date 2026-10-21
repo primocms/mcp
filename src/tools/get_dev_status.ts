@@ -1,4 +1,6 @@
 import fs from "node:fs/promises";
+import { read_dev_runtime, runtime_has_live_process, runtime_is_running } from "./dev-runtime.js";
+import { find_dev_workspace } from "./read-dev-logs.js";
 import path from "node:path";
 import { load as loadYaml } from "js-yaml";
 import { requireRecord, requireString } from "./validation_schemas.js";
@@ -38,17 +40,20 @@ export type GetDevStatusResult = {
 	// True only when a sync_status.json was found AND its last import succeeded.
 	// False when the last import failed OR no status file exists yet.
 	ok: boolean;
-	// Whether a .primo/sync_status.json was found at all. When false, `primo
-	// dev` has not run for this site (or has not completed a first import), so
-	// there is no state to report — the caller should ask the user to run it
-	// rather than spawning a server.
+	// True only after verifying the live workspace server identity. Import
+	// snapshots survive shutdown and cannot establish server liveness.
 	running: boolean;
+	process_alive?: boolean;
+	workspace?: string;
+	pid?: number;
+	cms_pid?: number;
+	log_file?: string;
 	// Number of fields dropped/skipped in the last import (0 on a clean import).
 	warning_count: number;
 	// Full per-field records for each dropped field. Empty on a clean import
 	// or when the writer only recorded a count.
 	warning_details: DevWarningDetail[];
-	// Populated only when the last import failed (running=true, ok=false).
+	// Populated when the last import failed; retained after server shutdown.
 	error?: string;
 	failed_at?: string;
 	warned_at?: string;
@@ -75,7 +80,7 @@ export type GetDevStatusResult = {
 	// site.yaml has no site_id (or doesn't exist for a site-shaped folder).
 	// `primo dev` skips such sites with a warning, so "run primo dev" is a
 	// dead end; the fix is `primo add <folder>` from the workspace root.
-	// Present only when running=false and the condition was detected.
+	// Present when there is no import status and the condition was detected.
 	unregistered?: boolean;
 	// Human-readable one-liner summarizing the state.
 	message: string;
@@ -99,7 +104,7 @@ const IMPORT_WRITEBACK_TOLERANCE_MS = 2000;
 export const getDevStatusTool = {
 	name: "get_dev_status",
 	description:
-		"Read the current `primo dev` state for a site without spawning a dev server yourself. Returns whether the last file→CMS import succeeded, exactly which fields were dropped (file, path, block, field, message), when it last imported, and where the running server is (port/url). Use this instead of starting your own dev server — the user runs `primo dev` in their own terminal and this reads the state it writes to .primo/sync_status.json. If `running` is false, `primo dev` has not completed a first import for this site; ask the user to run it rather than launching one. If `unregistered` is true, the site was never registered with the workspace CMS (site.yaml has no site_id) and `primo dev` would skip it — ask the user to run `primo add <folder>` from the workspace root instead.",
+		"Read the live workspace server state and the latest file-to-CMS import result. running verifies the workspace session identity; process_alive also detects a starting or orphaned process. Reuse a running server. If process_alive is true but running is false, inspect get_dev_logs and wait or diagnose it instead of launching a duplicate. If no process is alive, agents may start primo dev --author files from workspace in a background process or persistent terminal. Keep its PID and stop only a server you started. Import results may be historical after shutdown. If unregistered is true, register with primo add <folder> from workspace before starting dev.",
 	inputSchema: {
 		type: "object",
 		properties: {
@@ -116,6 +121,11 @@ export const getDevStatusTool = {
 		properties: {
 			ok: { type: "boolean" },
 			running: { type: "boolean" },
+			process_alive: { type: "boolean" },
+			workspace: { type: "string" },
+			pid: { type: "integer" },
+			cms_pid: { type: "integer" },
+			log_file: { type: "string" },
 			warning_count: { type: "integer", minimum: 0 },
 			warning_details: {
 				type: "array",
@@ -287,7 +297,7 @@ async function readSyncStatus(sitePath: string): Promise<RawSyncStatus | null> {
 	}
 }
 
-export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStatusResult> {
+async function getImportStatus(input: GetDevStatusInput): Promise<GetDevStatusResult> {
 	const sitePath = path.resolve(input.site_path);
 	const status = await readSyncStatus(sitePath);
 
@@ -300,7 +310,7 @@ export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStat
 				unregistered: true,
 				warning_count: 0,
 				warning_details: [],
-				message: `This site isn't registered with the workspace CMS — site.yaml has no site_id (or doesn't exist yet). \`primo dev\` skips unregistered sites with a warning, so running it will NOT import this site. Ask the user to run \`primo add ${folder}\` from the workspace root to register and import it — do not spawn a dev server yourself.`
+				message: `This site isn't registered with the workspace CMS — site.yaml has no site_id (or doesn't exist yet). \`primo dev\` skips unregistered sites with a warning, so running it will NOT import this site. Run \`primo add ${folder}\` from the workspace root to register and import it before starting dev; reuse an existing session and stop only a server you started.`
 			};
 		}
 		return {
@@ -308,7 +318,7 @@ export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStat
 			running: false,
 			warning_count: 0,
 			warning_details: [],
-			message: `No dev status found at ${sitePath}/.primo/sync_status.json. \`primo dev\` has not run (or not completed a first import) for this site. Ask the user to run \`primo dev\` in this directory — do not spawn a dev server yourself.`
+			message: `No dev status found at ${sitePath}/.primo/sync_status.json. \`primo dev\` has not run (or not completed a first import) for this site. If no workspace process is alive, start \`primo dev --author files\` from the workspace root in a background process or persistent terminal, then wait for the first import.`
 		};
 	}
 
@@ -417,6 +427,27 @@ export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStat
 		...base,
 		...driftBase,
 		message: `Last import succeeded with no dropped fields${status.last_import_at ? ` (${status.last_import_at})` : ""}${cleanTail}`
+	};
+}
+
+export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStatusResult> {
+	const workspace = await find_dev_workspace(input.site_path);
+	const runtime = await read_dev_runtime(workspace);
+	const process_alive = runtime !== null && runtime_has_live_process(runtime);
+	const running = runtime !== null && await runtime_is_running(runtime);
+	const status = await getImportStatus(input);
+	const state = running
+		? 'Workspace server is ready. '
+		: process_alive
+			? 'A workspace process is alive but the server is not ready. Inspect get_dev_logs; do not start a duplicate. '
+			: status.unregistered
+				? 'No managed workspace server is running. Register the site before starting dev. '
+			: 'No managed workspace server is running. Import results, if present, are historical. Agents may start primo dev --author files from the workspace root in a background process or persistent terminal. ';
+	return {
+		...status, running, process_alive, workspace,
+		...(runtime ? { pid: runtime.pid, port: runtime.port, url: `http://127.0.0.1:${runtime.port}`, ...(runtime.cms_pid ? { cms_pid: runtime.cms_pid } : {}) } : {}),
+		log_file: path.join(workspace, '.primo/dev.log'),
+		message: state + status.message.replace('All file content is in the CMS.', running ? 'All file content is in the CMS.' : 'No newer source files were found relative to that historical import.')
 	};
 }
 
