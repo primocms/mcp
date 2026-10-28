@@ -37,7 +37,8 @@
 		"test:publish-cache": "node --test scripts/test-publish-cache-version.mjs scripts/test-publish-cache-browser.mjs scripts/test-incremental-publish.mjs scripts/test-incremental-publish-cms.mjs",
 		"prepack": "npm run build",
 		"benchmark:publish": "npm run build && node scripts/benchmark-publish.mjs",
-		"test:publish-hydration": "node --test scripts/test-publish-hydration.mjs"
+		"test:publish-hydration": "node --test scripts/test-publish-hydration.mjs",
+		"test:site-fields": "node --test scripts/test-site-field-references.mjs"
 	},
 	"engines": {
 		"node": ">=18.18"

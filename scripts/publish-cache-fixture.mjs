@@ -26,7 +26,7 @@ const stores = new WeakMap();
 
 // Persist the real artifact metadata and PocketBase-style file names so repeat
 // publishes exercise skip decisions, including after a fresh graph fetch.
-export async function publish(fixture, { failUpload } = {}) {
+export async function publish(fixture, { failUpload, uploads = new Map() } = {}) {
   let store = stores.get(fixture);
   if (!store) {
     store = { artifacts: new Map(), sequence: 0 };
@@ -34,7 +34,6 @@ export async function publish(fixture, { failUpload } = {}) {
     for (const page of fixture.pages) page.compiled_html_hash ??= '';
     for (const symbol of fixture.site_symbols) symbol.compiled_js_hash ??= '';
   }
-  const uploads = new Map();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options = {}) => {
     const match = new URL(url).pathname.match(/^\/api\/collections\/([^/]+)\/records(?:\/([^/]+))?$/);
@@ -66,8 +65,8 @@ export async function publish(fixture, { failUpload } = {}) {
   } finally { globalThis.fetch = originalFetch; }
 }
 
-export async function compile(fixture) {
-  return (await publish(fixture)).artifacts;
+export async function compile(fixture, uploads) {
+  return (await publish(fixture, { uploads })).artifacts;
 }
 
 export function imports(html) {

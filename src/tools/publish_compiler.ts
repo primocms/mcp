@@ -240,6 +240,10 @@ export async function compileAndUploadPublishArtifacts(
 	site: SiteRecord
 ): Promise<PublishArtifactSummary> {
 	const graph = await fetchSiteGraph(apiUrl, token, site);
+	// Fail before uploading any artifacts, including unused/nested references.
+	for (const field of [...graph.siteFields, ...graph.symbolFields, ...graph.pageTypeFields]) {
+		if (field.type === "site-field") resolveSiteField(graph, field);
+	}
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "primo-mcp-publish-"));
 
 	try {
@@ -777,6 +781,19 @@ export async function __test_compilePages(graph: SiteGraph, tempDir: string) {
 	return compilePages(graph, tempDir, symbolVersions(artifacts));
 }
 
+// Keys are the portable export format; IDs remain valid for existing sites.
+// Resolve only roots in this site, with IDs taking precedence over key collisions.
+function resolveSiteField(graph: SiteGraph, field: FieldRecord): FieldRecord & { key: string } {
+	const reference = stringFromConfig(field, "field");
+	const roots = graph.siteFields.filter((candidate) => candidate.site === graph.site.id && !candidate.parent);
+	const byId = roots.find((candidate) => candidate.id === reference);
+	const byKey = roots.filter((candidate) => candidate.key === reference);
+	const resolved = byId ?? (byKey.length === 1 ? byKey[0] : undefined);
+	if (reference && resolved?.key) return resolved as FieldRecord & { key: string };
+	const owner = field.symbol ? `block "${graph.symbols.find((symbol) => symbol.id === field.symbol)?.name || field.symbol}"` : field.page_type ? `page type "${field.page_type}"` : `site "${graph.site.name}"`;
+	throw new Error(`Unresolved or ambiguous site-field reference ${JSON.stringify(reference || "")} in ${owner}, field "${field.key || field.id}" (${field.id}). Set config.field to the ID or unique key of a top-level field in site "${graph.site.name}" (${graph.site.id}); check site/fields.yaml.`);
+}
+
 function buildContent(
 	graph: SiteGraph,
 	target:
@@ -817,9 +834,7 @@ function buildContent(
 		}
 
 		if (field.type === "site-field") {
-			const sourceFieldId = stringFromConfig(field, "field");
-			const sourceField = sourceFieldId ? graph.siteFields.find((candidate) => candidate.id === sourceFieldId) : undefined;
-			if (!sourceField?.key) continue;
+			const sourceField = resolveSiteField(graph, field);
 
 			const sourceContent = contentFor(graph, { kind: "site", entity: graph.site }, { page: currentPage });
 			if (!content.en) content.en = {};

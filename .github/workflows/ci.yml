@@ -23,6 +23,7 @@ jobs:
       - run: npm ci
       - run: npm audit
       - run: npm run build
+      - run: npm run test:site-fields
       - run: npm run test:dev-runtime
       - run: npm run test:resolution
       - run: npm run test:image-focal-point
