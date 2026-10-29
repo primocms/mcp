@@ -6,12 +6,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as esbuild from "esbuild";
+import MarkdownIt from "markdown-it";
 import postcss from "postcss";
 import postcssNested from "postcss-nested";
 import * as svelteCompiler from "svelte/compiler";
 import { render } from "svelte/server";
 import { cachedScriptVersion, pageFileMatches, pageFileName, scriptFileName } from "./publish-cache.js";
-import { markdown_to_html, rich_text_to_html } from "./rich-text.js";
+import { renderRichText } from "./publish-rich-text.js";
 
 const { compile } = svelteCompiler;
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -219,8 +220,8 @@ type PublishArtifactSummary = {
 // that don't change authored content. Separate producers cannot share output.
 const COMPILER_PROFILE = ["mcp-publish-v1", svelteCompiler.VERSION, esbuild.version, PRIMO_BASELINE_CSS,
 	createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url)))
-		.update(readFileSync(new URL("./publish-cache.js", import.meta.url)))
-		.update(readFileSync(new URL("./rich-text.js", import.meta.url))).digest("hex")];
+		.update(readFileSync(new URL("./publish-rich-text.js", import.meta.url)))
+		.update(readFileSync(new URL("./publish-cache.js", import.meta.url))).digest("hex")];
 function inputHash(value: unknown): string {
 	return createHash("sha256").update(JSON.stringify([COMPILER_PROFILE, value])).digest("hex");
 }
@@ -229,6 +230,11 @@ type SymbolArtifact = { symbolId: string; hash: string; version: string; js?: st
 type PageArtifact = { pageId: string; hash: string; html?: string; isHomepage: boolean };
 
 const cssCache = new Map<string, string>();
+const markdown = new MarkdownIt({
+	html: true,
+	linkify: true,
+	typographer: true
+});
 
 export async function compileAndUploadPublishArtifacts(
 	apiUrl: string,
@@ -869,7 +875,7 @@ function buildContent(
 				continue;
 			}
 			const value = normalizeEntryValue(entry.value);
-			localeContent(content, entry.locale || "en")[field.key] = typeof value === "string" ? markdown_to_html(value) : "";
+			localeContent(content, entry.locale || "en")[field.key] = typeof value === "string" ? markdown.render(value) : "";
 			continue;
 		}
 
@@ -880,7 +886,8 @@ function buildContent(
 				content.en[field.key] = "";
 				continue;
 			}
-			localeContent(content, entry.locale || "en")[field.key] = rich_text_to_html(normalizeEntryValue(entry.value));
+			const value = normalizeEntryValue(entry.value);
+			localeContent(content, entry.locale || "en")[field.key] = typeof value === "string" ? markdown.render(value) : renderRichText(value);
 			continue;
 		}
 
@@ -1188,6 +1195,3 @@ function jsStringEscape(value: string): string {
 	return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
-function escapeHtml(value: string): string {
-	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
