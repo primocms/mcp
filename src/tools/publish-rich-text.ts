@@ -38,4 +38,3 @@ export function renderRichText(value: unknown): string {
 	const node = richTextSchema.nodeFromJSON(value);
 	return DOMSerializer.fromSchema(richTextSchema).serializeFragment(node.content, { document }).render();
 }
-

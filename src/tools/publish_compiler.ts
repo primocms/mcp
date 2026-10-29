@@ -1194,4 +1194,3 @@ function cssStringEscape(value: string): string {
 function jsStringEscape(value: string): string {
 	return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
-
