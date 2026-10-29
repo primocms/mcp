@@ -39,7 +39,7 @@
 		"benchmark:publish": "npm run build && node scripts/benchmark-publish.mjs",
 		"test:publish-hydration": "node --test scripts/test-publish-hydration.mjs",
 		"test:site-fields": "node --test scripts/test-site-field-references.mjs",
-		"test:publish-content": "node --test scripts/test-publish-content.mjs"
+		"test:publish-content": "node --test scripts/test-publish-content.mjs scripts/test-publish-renderer-upgrade.mjs"
 	},
 	"engines": {
 		"node": ">=18.18"
