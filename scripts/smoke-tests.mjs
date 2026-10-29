@@ -78,7 +78,8 @@ try {
 		"resolve_field_value",
 		"scaffold_block",
 		"scaffold_page_type",
-		"get_dev_status"
+		"get_dev_status",
+		"get_dev_logs"
 	]) {
 		assert(toolNames.has(tool), `Expected ${tool} in tool list.`);
 	}
@@ -403,13 +404,13 @@ sections:
 		const clean = structured(
 			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
 		);
-		assert(clean.running === true && clean.ok === true, "Expected running+ok on a clean import.");
+		assert(clean.running === false && clean.ok === true, "An import snapshot must not imply a live server.");
 		assert(clean.warning_count === 0 && clean.warning_details.length === 0, "Expected no warnings on a clean import.");
 		assert(clean.port === 3000 && clean.url === "http://127.0.0.1:3000", "Expected port/url to be surfaced.");
 		// No source files exist yet → disk cannot be newer than the import, so
 		// the tool must NOT claim drift and MAY assert files are in the CMS.
 		assert(clean.files_modified_since_import === false, "Expected no drift when no source files exist.");
-		assert(/All file content is in the CMS/.test(clean.message), "Expected the clean 'in the CMS' message when there's no drift.");
+		assert(!/All file content is in the CMS/.test(clean.message), "A stopped server must not imply current CMS agreement.");
 
 		// Drift: a source file modified AFTER last_import_at must flip the tool
 		// off its "all content is in the CMS" claim — this is the check that
@@ -458,7 +459,7 @@ sections:
 		const failed = structured(
 			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
 		);
-		assert(failed.running === true && failed.ok === false, "Expected running=true, ok=false on a failed import.");
+		assert(failed.running === false && failed.ok === false, "Expected a historical failed import without a live server.");
 		assert(failed.error === "duplicate _id", "Expected the import error to be surfaced.");
 
 		// Older/count-only writer: a count with no warning_details must still
@@ -481,7 +482,7 @@ sections:
 		const incomplete = structured(
 			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
 		);
-		assert(incomplete.running === true && incomplete.ok === false, "Expected incomplete status (no ok) to report ok=false.");
+		assert(incomplete.running === false && incomplete.ok === false, "Expected incomplete status (no ok) to report ok=false without a live server.");
 
 		// Malformed JSON is treated as no status at all, not an error.
 		writeFileSync(join(devStatusDir, ".primo", "sync_status.json"), "{ not json");
@@ -489,6 +490,9 @@ sections:
 			await client.callTool({ name: "get_dev_status", arguments: { site_path: devStatusDir } })
 		);
 		assert(malformed.running === false && malformed.ok === false, "Expected malformed status to report not-running.");
+		writeFileSync(join(devStatusDir, '.primo', 'dev.log'), 'server stdout\nserver stderr\n');
+		const logs = structured(await client.callTool({ name: 'get_dev_logs', arguments: { site_path: devStatusDir, lines: 1 } }));
+		assert(logs.available && logs.text === 'server stderr\n', 'Expected MCP to expose persisted server logs.');
 		console.log("get_dev_status fixture: ok");
 	} finally {
 		rmSync(devStatusDir, { recursive: true, force: true });

@@ -9,16 +9,26 @@ on:
 
 jobs:
   test:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22.13.0, 24.0.0]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - run: npm audit
       - run: npm run build
+      - run: npm run test:site-fields
+      - run: npm run test:dev-runtime
       - run: npm run test:resolution
       - run: npm run test:image-focal-point
       - run: npx playwright install --with-deps chromium
+      - run: npm run test:publish-content
       - run: npm run test:publish-cache
+      - run: npm run test:publish-hydration
+

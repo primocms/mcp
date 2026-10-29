@@ -1,6 +1,6 @@
 {
 	"name": "primo-mcp",
-	"version": "0.1.10",
+	"version": "0.1.11-rc.3",
 	"description": "Official Primo MCP server for live, versioned docs and validation in exported Primo sites.",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -34,21 +34,33 @@
 		"test:null-image": "node scripts/test-null-image-value.mjs",
 		"test:image-focal-point": "node --test scripts/test-image-focal-point.mjs",
 		"test:link-active": "node --test scripts/test-link-active.mjs",
-		"test:publish-cache": "node --test scripts/test-publish-cache-version.mjs scripts/test-publish-cache-browser.mjs",
-		"prepack": "npm run build"
+		"test:publish-cache": "node --test scripts/test-publish-cache-version.mjs scripts/test-publish-cache-browser.mjs scripts/test-incremental-publish.mjs scripts/test-incremental-publish-cms.mjs",
+		"prepack": "npm run build",
+		"benchmark:publish": "npm run build && node scripts/benchmark-publish.mjs",
+		"test:publish-hydration": "node --test scripts/test-publish-hydration.mjs",
+		"test:site-fields": "node --test scripts/test-site-field-references.mjs",
+		"test:publish-content": "node --test scripts/test-publish-content.mjs scripts/test-publish-renderer-upgrade.mjs"
 	},
 	"engines": {
 		"node": ">=18.18"
 	},
 	"dependencies": {
-		"@modelcontextprotocol/sdk": "^1.29.0",
+		"@modelcontextprotocol/sdk": "^1.31.0",
+		"@tiptap/core": "3.32.0",
+		"@tiptap/extension-highlight": "3.32.0",
+		"@tiptap/extension-image": "3.32.0",
+		"@tiptap/extension-typography": "3.32.0",
+		"@tiptap/extension-youtube": "3.32.0",
+		"@tiptap/pm": "3.32.0",
+		"@tiptap/starter-kit": "3.32.0",
 		"ajv": "^8.20.0",
-		"esbuild": "^0.28.0",
-		"js-yaml": "^4.1.1",
-		"markdown-it": "^14.1.1",
-		"postcss": "^8.5.12",
+		"esbuild": "^0.28.2",
+		"js-yaml": "^4.3.2",
+		"markdown-it": "^14.3.3",
+		"postcss": "^8.5.23",
 		"postcss-nested": "^7.0.2",
-		"svelte": "^5.55.5"
+		"svelte": "^5.55.7",
+		"zeed-dom": "0.18.0"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.63.0",
