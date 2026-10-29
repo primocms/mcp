@@ -38,12 +38,19 @@
 		"prepack": "npm run build",
 		"benchmark:publish": "npm run build && node scripts/benchmark-publish.mjs",
 		"test:publish-hydration": "node --test scripts/test-publish-hydration.mjs",
-		"test:site-fields": "node --test scripts/test-site-field-references.mjs"
+		"test:site-fields": "node --test scripts/test-site-field-references.mjs",
+		"test:publish-content": "node --test scripts/test-publish-content.mjs"
 	},
 	"engines": {
 		"node": ">=18.18"
 	},
 	"dependencies": {
+		"@tiptap/core": "^3.32.0",
+		"@tiptap/extension-highlight": "^3.32.0",
+		"@tiptap/extension-image": "^3.32.0",
+		"@tiptap/extension-youtube": "^3.32.0",
+		"@tiptap/pm": "^3.32.0",
+		"@tiptap/starter-kit": "^3.32.0",
 		"@modelcontextprotocol/sdk": "^1.31.0",
 		"ajv": "^8.20.0",
 		"esbuild": "^0.28.2",
