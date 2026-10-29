@@ -103,4 +103,3 @@ test('published HTML and hydration props keep rich text and image dimensions', a
   assert.equal(content.photo.height, 900);
   assert.equal(content.body, renderRichText(document));
 });
-
