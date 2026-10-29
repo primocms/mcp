@@ -12,6 +12,7 @@ import postcssNested from "postcss-nested";
 import * as svelteCompiler from "svelte/compiler";
 import { render } from "svelte/server";
 import { cachedScriptVersion, pageFileMatches, pageFileName, scriptFileName } from "./publish-cache.js";
+import { renderRichText } from "./publish-rich-text.js";
 
 const { compile } = svelteCompiler;
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -219,6 +220,7 @@ type PublishArtifactSummary = {
 // that don't change authored content. Separate producers cannot share output.
 const COMPILER_PROFILE = ["mcp-publish-v1", svelteCompiler.VERSION, esbuild.version, PRIMO_BASELINE_CSS,
 	createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url)))
+		.update(readFileSync(new URL("./publish-rich-text.js", import.meta.url)))
 		.update(readFileSync(new URL("./publish-cache.js", import.meta.url))).digest("hex")];
 function inputHash(value: unknown): string {
 	return createHash("sha256").update(JSON.stringify([COMPILER_PROFILE, value])).digest("hex");
@@ -884,7 +886,8 @@ function buildContent(
 				content.en[field.key] = "";
 				continue;
 			}
-			localeContent(content, entry.locale || "en")[field.key] = renderRichTextFallback(normalizeEntryValue(entry.value));
+			const value = normalizeEntryValue(entry.value);
+			localeContent(content, entry.locale || "en")[field.key] = typeof value === "string" ? markdown.render(value) : renderRichText(value);
 			continue;
 		}
 
@@ -908,6 +911,8 @@ function buildContent(
 			localeContent(content, entry.locale || "en")[field.key] = {
 				alt: typeof image.alt === "string" ? image.alt : "",
 				url,
+				width: image.width,
+				height: image.height,
 				focal_point,
 				position: getImagePosition(focal_point)
 			};
@@ -1137,32 +1142,6 @@ function normalizeEntryValue(value: unknown): unknown {
 	return value;
 }
 
-function renderRichTextFallback(value: unknown): string {
-	if (typeof value === "string") return markdown.render(value);
-	if (value && typeof value === "object" && Array.isArray((value as { content?: unknown[] }).content)) {
-		return renderTipTapNodes((value as { content: unknown[] }).content);
-	}
-	return "";
-}
-
-function renderTipTapNodes(nodes: unknown[]): string {
-	return nodes
-		.map((node) => {
-			if (!node || typeof node !== "object") return "";
-			const typed = node as { type?: string; text?: string; content?: unknown[] };
-			if (typed.type === "text") return escapeHtml(typed.text ?? "");
-			const inner = Array.isArray(typed.content) ? renderTipTapNodes(typed.content) : "";
-			if (typed.type === "paragraph") return `<p>${inner}</p>`;
-			if (typed.type === "heading") return `<h2>${inner}</h2>`;
-			if (typed.type === "bulletList") return `<ul>${inner}</ul>`;
-			if (typed.type === "orderedList") return `<ol>${inner}</ol>`;
-			if (typed.type === "listItem") return `<li>${inner}</li>`;
-			if (typed.type === "blockquote") return `<blockquote>${inner}</blockquote>`;
-			return inner;
-		})
-		.join("");
-}
-
 function pageMeta(graph: SiteGraph, page: PageRecord): Record<string, unknown> {
 	return {
 		created_at: page.created,
@@ -1214,8 +1193,4 @@ function cssStringEscape(value: string): string {
 
 function jsStringEscape(value: string): string {
 	return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-function escapeHtml(value: string): string {
-	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

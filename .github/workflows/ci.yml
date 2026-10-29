@@ -28,5 +28,6 @@ jobs:
       - run: npm run test:resolution
       - run: npm run test:image-focal-point
       - run: npx playwright install --with-deps chromium
+      - run: npm run test:publish-content
       - run: npm run test:publish-cache
       - run: npm run test:publish-hydration
