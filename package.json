@@ -39,26 +39,28 @@
 		"benchmark:publish": "npm run build && node scripts/benchmark-publish.mjs",
 		"test:publish-hydration": "node --test scripts/test-publish-hydration.mjs",
 		"test:site-fields": "node --test scripts/test-site-field-references.mjs",
-		"test:publish-content": "node --test scripts/test-publish-content.mjs"
+		"test:publish-content": "node --test scripts/test-publish-content.mjs scripts/test-publish-renderer-upgrade.mjs"
 	},
 	"engines": {
 		"node": ">=18.18"
 	},
 	"dependencies": {
-		"@tiptap/core": "^3.32.0",
-		"@tiptap/extension-highlight": "^3.32.0",
-		"@tiptap/extension-image": "^3.32.0",
-		"@tiptap/extension-youtube": "^3.32.0",
-		"@tiptap/pm": "^3.32.0",
-		"@tiptap/starter-kit": "^3.32.0",
 		"@modelcontextprotocol/sdk": "^1.31.0",
+		"@tiptap/core": "3.32.0",
+		"@tiptap/extension-highlight": "3.32.0",
+		"@tiptap/extension-image": "3.32.0",
+		"@tiptap/extension-typography": "3.32.0",
+		"@tiptap/extension-youtube": "3.32.0",
+		"@tiptap/pm": "3.32.0",
+		"@tiptap/starter-kit": "3.32.0",
 		"ajv": "^8.20.0",
 		"esbuild": "^0.28.2",
 		"js-yaml": "^4.3.2",
 		"markdown-it": "^14.3.3",
 		"postcss": "^8.5.23",
 		"postcss-nested": "^7.0.2",
-		"svelte": "^5.55.7"
+		"svelte": "^5.55.7",
+		"zeed-dom": "0.18.0"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.63.0",
@@ -67,3 +69,4 @@
 		"typescript": "^6.0.3"
 	}
 }
+
