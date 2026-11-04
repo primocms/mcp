@@ -59,7 +59,8 @@ test('MCP status verifies server identity before reporting running, independentl
  const stale = await getDevStatus({ site_path: site });
  assert.equal(stale.running, false);
  assert.equal(stale.process_alive, true);
- assert.match(stale.message, /do not start a duplicate/);
+ assert.match(stale.message, /identity is unverified/);
+ assert.match(stale.message, /unrelated process/);
  await fs.unlink(path.join(workspace, '.primo/dev-server.json'));
  const stopped = await getDevStatus({ site_path: site });
  assert.equal(stopped.running, false);

@@ -218,7 +218,24 @@ type PublishArtifactSummary = {
 
 // Actual shipped compiler code participates in invalidation, including upgrades
 // that don't change authored content. Separate producers cannot share output.
+const require = createRequire(import.meta.url);
+function dependencyVersion(name: string): string {
+	let directory = path.dirname(require.resolve(name === "@tiptap/pm" ? "@tiptap/pm/model" : name));
+	while (true) {
+		try {
+			const metadata = JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8"));
+			if (metadata.name === name && typeof metadata.version === "string") return metadata.version;
+		} catch { /* Keep walking through package entry subdirectories. */ }
+		const parent = path.dirname(directory);
+		if (parent === directory) throw new Error(`Cannot identify renderer dependency ${name}.`);
+		directory = parent;
+	}
+}
+const rendererDependencies = ["markdown-it", "zeed-dom", "postcss", "postcss-nested",
+	...Object.keys(JSON.parse(readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8")).dependencies)
+		.filter((name) => name.startsWith("@tiptap/"))].sort();
 const COMPILER_PROFILE = ["mcp-publish-v1", svelteCompiler.VERSION, esbuild.version, PRIMO_BASELINE_CSS,
+	rendererDependencies.map((name) => [name, dependencyVersion(name)]),
 	createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url)))
 		.update(readFileSync(new URL("./publish-rich-text.js", import.meta.url)))
 		.update(readFileSync(new URL("./publish-cache.js", import.meta.url))).digest("hex")];
@@ -245,6 +262,17 @@ export async function compileAndUploadPublishArtifacts(
 	// Fail before uploading any artifacts, including unused/nested references.
 	for (const field of [...graph.siteFields, ...graph.symbolFields, ...graph.pageTypeFields]) {
 		if (field.type === "site-field") resolveSiteField(graph, field);
+	}
+	const richTextFields = new Set([...graph.siteFields, ...graph.symbolFields, ...graph.pageTypeFields]
+		.filter((field) => field.type === "rich-text").map((field) => field.id));
+	for (const entry of [...graph.siteEntries, ...graph.symbolEntries, ...graph.pageEntries,
+		...graph.pageSectionEntries, ...graph.pageTypeSectionEntries, ...graph.pageTypeEntries]) {
+		if (!richTextFields.has(entry.field)) continue;
+		const value = normalizeEntryValue(entry.value);
+		if (typeof value !== "string") {
+			try { renderRichText(value); }
+			catch (error) { throw new Error(`Invalid rich-text entry ${entry.id}: ${String(error)}`); }
+		}
 	}
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "primo-mcp-publish-"));
 
@@ -424,6 +452,7 @@ function symbolVersions(artifacts: SymbolArtifact[]): Map<string, string> {
 
 async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<string, string>): Promise<PageArtifact[]> {
 	const artifacts: PageArtifact[] = [];
+	const homepageId = graph.pages.find((page) => !page.parent)?.id;
 
 	for (const page of graph.pages) {
 		const pageType = graph.pageTypes.find((candidate) => candidate.id === page.page_type);
@@ -460,8 +489,8 @@ async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<str
 			}))
 		});
 		if (page.compiled_html_hash === hash && pageFileMatches(page.compiled_html, hash) &&
-			(page.parent || pageFileMatches(graph.site.preview, hash))) {
-			artifacts.push({ pageId: page.id, hash, isHomepage: !page.parent });
+			(page.id !== homepageId || pageFileMatches(graph.site.preview, hash))) {
+			artifacts.push({ pageId: page.id, hash, isHomepage: page.id === homepageId });
 			continue;
 		}
 
@@ -505,7 +534,7 @@ async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<str
 			pageId: page.id,
 			hash,
 			html,
-			isHomepage: !page.parent
+			isHomepage: page.id === homepageId
 		});
 	}
 
@@ -588,16 +617,20 @@ async function compileServerBundle(
 	tempDir: string
 ): Promise<{ body: string; head: string }> {
 	const files = new Map<string, string>();
+	const svelteFilenames = new Map<string, string>();
 	files.set("./entry.js", `export { default } from './App.svelte';\n` + components.map((component, index) =>
-		`export { default as component_${index} } from './${component.filename}';`
+		`export { default as component_${index} } from './section-${index}.svelte';`
 	).join("\n"));
 	files.set("./App.svelte", appWrapperSource([], head));
-	components.forEach((component) => {
-		files.set(`./${component.filename}`, componentSource(component));
+	components.forEach((component, index) => {
+		const virtualPath = `./section-${index}.svelte`;
+		files.set(virtualPath, componentSource(component));
+		svelteFilenames.set(virtualPath, `./${component.filename}`);
 	});
 
 	const code = await bundleVirtualProject({
 		files,
+		svelteFilenames,
 		svelteOptions: {
 			generate: "server",
 			css: "injected",
@@ -630,12 +663,14 @@ async function compileServerBundle(
 // still resolves through SVELTE_PACKAGE_DIR; production callers never pass it.
 export async function bundleVirtualProject({
 	files,
+	svelteFilenames,
 	svelteOptions,
 	platform,
 	tempDir,
 	packageRoot = PACKAGE_ROOT
 }: {
 	files: Map<string, string>;
+	svelteFilenames?: Map<string, string>;
 	svelteOptions: Record<string, unknown>;
 	platform: "browser" | "node";
 	tempDir: string;
@@ -687,7 +722,7 @@ export async function bundleVirtualProject({
 							// head IDs and CSS scopes across independently rendered sections.
 							const compiled = compile(source, {
 								...svelteOptions,
-								filename: args.path,
+								filename: svelteFilenames?.get(args.path) ?? args.path,
 								cssHash: ({ filename, css, hash }) => `svelte-${hash(filename + css)}`
 							});
 							return {

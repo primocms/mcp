@@ -104,7 +104,7 @@ const IMPORT_WRITEBACK_TOLERANCE_MS = 2000;
 export const getDevStatusTool = {
 	name: "get_dev_status",
 	description:
-		"Read the live workspace server state and the latest file-to-CMS import result. running verifies the workspace session identity; process_alive also detects a starting or orphaned process. Reuse a running server. If process_alive is true but running is false, inspect get_dev_logs and wait or diagnose it instead of launching a duplicate. If no process is alive, agents may start primo dev --author files from workspace in a background process or persistent terminal. Keep its PID and stop only a server you started. Import results may be historical after shutdown. If unregistered is true, register with primo add <folder> from workspace before starting dev.",
+		"Read the live workspace server state and the latest file-to-CMS import result. running verifies the workspace session identity; process_alive only means a recorded PID exists and does not establish ownership. Reuse a running server. If process_alive is true but running is false, inspect get_dev_logs and verify process ownership before starting or stopping a server. If no process is alive, agents may start primo dev --author files from workspace in a background process or persistent terminal. Keep its PID and stop only a server you started. Import results may be historical after shutdown. If unregistered is true, register with primo add <folder> from workspace before starting dev.",
 	inputSchema: {
 		type: "object",
 		properties: {
@@ -439,7 +439,7 @@ export async function getDevStatus(input: GetDevStatusInput): Promise<GetDevStat
 	const state = running
 		? 'Workspace server is ready. '
 		: process_alive
-			? 'A workspace process is alive but the server is not ready. Inspect get_dev_logs; do not start a duplicate. '
+			? 'A recorded PID is alive but workspace server identity is unverified. It may be starting, orphaned, or an unrelated process reusing the PID. Inspect get_dev_logs and verify process ownership before starting or stopping a server. '
 			: status.unregistered
 				? 'No managed workspace server is running. Register the site before starting dev. '
 			: 'No managed workspace server is running. Import results, if present, are historical. Agents may start primo dev --author files from the workspace root in a background process or persistent terminal. ';

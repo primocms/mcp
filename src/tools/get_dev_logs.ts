@@ -20,6 +20,9 @@ export const getDevLogsTool = {
 
 export function readGetDevLogsInput(args: unknown): GetDevLogsInput {
 	const record = requireRecord(args, getDevLogsTool.name)
+	for (const key of Object.keys(record)) {
+		if (!['site_path', 'lines', 'previous'].includes(key)) throw new Error(`Unknown get_dev_logs argument: ${key}`)
+	}
 	const site_path = requireString(record, 'site_path', getDevLogsTool.name)
 	if (record.lines !== undefined && (!Number.isInteger(record.lines) || (record.lines as number) < 1 || (record.lines as number) > 1000)) {
 		throw new Error('lines must be an integer from 1 to 1000')

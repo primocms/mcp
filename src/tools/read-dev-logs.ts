@@ -7,9 +7,13 @@ export const LOG_READ_LIMIT = 256 * 1024
 // bounded tail behavior compatible across independently installed versions.
 export async function find_dev_workspace(start: string): Promise<string> {
 	const initial = path.resolve(start)
+	// A single-site dev session writes its own runtime/log even inside a workspace.
+	for (const marker of ['.primo/dev-server.json', '.primo/dev.log']) {
+		try { if ((await fs.stat(path.join(initial, marker))).isFile()) return initial } catch { /* no local session */ }
+	}
 	let dir = initial
 	while (true) {
-		try { await fs.access(path.join(dir, 'server.yaml')); return dir } catch { /* walk up */ }
+		try { if ((await fs.stat(path.join(dir, 'server.yaml'))).isFile()) return dir } catch { /* walk up */ }
 		const parent = path.dirname(dir)
 		if (parent === dir) return initial // Legacy single-site workspace.
 		dir = parent
@@ -34,7 +38,7 @@ export async function read_dev_logs(start: string, lines = 100, previous = false
 		const { bytesRead } = await handle.read(buffer, 0, buffer.length, start)
 		let text = buffer.subarray(0, bytesRead).toString('utf8')
 		// Drop a partial first line/UTF-8 character when reading a bounded tail.
-		if (start > 0) text = text.slice(text.indexOf('\n') + 1)
+		if (start > 0) text = text.includes('\n') ? text.slice(text.indexOf('\n') + 1) : ''
 		const entries = text.replace(/\n$/, '').split('\n')
 		return {
 			available: true, workspace, log_file,
