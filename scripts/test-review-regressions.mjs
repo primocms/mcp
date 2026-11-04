@@ -39,6 +39,22 @@ test('unsupported rich text fails before any artifact upload', async () => {
   assert.equal(uploads.size, 0);
 });
 
+test('top-level site aliases resolve their target without recursively rebuilding unrelated roots', async () => {
+  const graph = fixture();
+  graph.site_fields = [
+    { id: 'notice', key: 'notice', type: 'text', site: 'site' },
+    { id: 'alias', key: 'alias', type: 'site-field', site: 'site', config: { field: 'notice' } }
+  ];
+  graph.site_entries = [{ id: 'notice-value', field: 'notice', value: 'Shared message', locale: 'en' }];
+  graph.site.head = '<title>{alias}</title>';
+  const result = await publish(graph);
+  assert.match(result.uploads.get('pages/home/compiled_html'), /Shared message/);
+  graph.site_fields[0] = { id: 'notice', key: 'notice', type: 'site-field', site: 'site', config: { field: 'alias' } };
+  const uploads = new Map();
+  await assert.rejects(publish(graph, { uploads }), /Cyclic site-field reference/);
+  assert.equal(uploads.size, 0);
+});
+
 test('log reads discard a truncated line with no newline and reject unknown input keys', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'primo-review-logs-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));

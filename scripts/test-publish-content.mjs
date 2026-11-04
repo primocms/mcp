@@ -45,7 +45,7 @@ test('rich text preserves the CMS schema marks, nodes and attributes', () => {
   assert.deepEqual(document, before);
 });
 
-test('static rendering matches the browser converter used by CMS publishing', async () => {
+test('static rendering matches browser generateHTML with publishRichTextExtensions', async () => {
   const bundled = await build({
     stdin: { contents: `import { generateHTML } from '@tiptap/core'; import { publishRichTextExtensions } from './dist/tools/publish-rich-text.js'; window.cmsRender = doc => generateHTML(doc, publishRichTextExtensions);`, resolveDir: process.cwd() },
     bundle: true, write: false, format: 'iife', platform: 'browser'

@@ -274,6 +274,8 @@ export async function compileAndUploadPublishArtifacts(
 			catch (error) { throw new Error(`Invalid rich-text entry ${entry.id}: ${String(error)}`); }
 		}
 	}
+	// Site aliases can form cycles even when no block directly references them.
+	contentFor(graph, { kind: "site", entity: graph.site });
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "primo-mcp-publish-"));
 
 	try {
@@ -842,13 +844,13 @@ function buildContent(
 		| { kind: "page_type"; entity: PageTypeRecord },
 	fields: FieldRecord[],
 	entries: EntryRecord[],
-	options: { page?: PageRecord; parentField?: FieldRecord; parentEntry?: EntryRecord } = {}
+	options: { page?: PageRecord; parentField?: FieldRecord; parentEntry?: EntryRecord; rootField?: FieldRecord; siteFieldPath?: Set<string> } = {}
 ): Record<string, Record<string, unknown>> {
 	// Preserve the viewed page when following references to other pages.
 	const currentPage = options.page;
 	const content: Record<string, Record<string, unknown>> = {};
 	const filteredFields = fields
-		.filter((field) => (options.parentField ? field.parent === options.parentField.id : !field.parent))
+		.filter((field) => (options.parentField ? field.parent === options.parentField.id : options.rootField ? field.id === options.rootField.id : !field.parent))
 		.filter((field) => !!field.key)
 		.sort(sortByIndex);
 
@@ -872,8 +874,11 @@ function buildContent(
 
 		if (field.type === "site-field") {
 			const sourceField = resolveSiteField(graph, field);
-
-			const sourceContent = contentFor(graph, { kind: "site", entity: graph.site }, { page: currentPage });
+			const visited = options.siteFieldPath ?? new Set<string>();
+			if (visited.has(field.id)) throw new Error(`Cyclic site-field reference at ${field.key} (${field.id}).`);
+			const sourceContent = buildContent(graph, { kind: "site", entity: graph.site },
+				graph.siteFields, graph.siteEntries, { page: currentPage, rootField: sourceField,
+					siteFieldPath: new Set([...visited, field.id]) });
 			if (!content.en) content.en = {};
 			content.en[field.key] = sourceContent.en?.[sourceField.key];
 			continue;
