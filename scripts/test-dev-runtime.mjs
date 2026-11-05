@@ -94,7 +94,7 @@ test('stopped nested site logs cannot hide a live ancestor workspace', async t =
  await fs.writeFile(path.join(site,'.primo/dev.log'),'stale single-site log\n');
  await fs.writeFile(path.join(site,'.primo/dev-server.json'),JSON.stringify({...runtime,workspace:await fs.realpath(site),pid:2147483647}));
  await fs.writeFile(path.join(workspace,'.primo/dev.log'),'active workspace log\n');
- assert.equal((await getDevStatus({site_path:site})).workspace,workspace);
+ assert.equal(await fs.realpath((await getDevStatus({site_path:site})).workspace),workspace);
  assert.equal((await getDevStatus({site_path:site})).running,true);
  assert.equal((await getDevLogs({site_path:site})).text,'active workspace log\n');
 });
