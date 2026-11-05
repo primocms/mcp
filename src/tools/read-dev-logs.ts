@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { read_dev_runtime, runtime_is_running } from './dev-runtime.js'
+import { read_dev_runtime, runtime_has_live_process, runtime_is_running } from './dev-runtime.js'
 
 export const LOG_READ_LIMIT = 256 * 1024
 
@@ -8,15 +8,16 @@ export const LOG_READ_LIMIT = 256 * 1024
 // bounded tail behavior compatible across independently installed versions.
 export async function find_dev_workspace(start: string): Promise<string> {
 	const initial = path.resolve(start)
-    // Persistent logs and stale runtime files outlive their session. Prefer a
-    // nested single-site session only after confirming its live identity.
-    const runtime = await read_dev_runtime(initial)
-    if (runtime && await runtime_is_running(runtime)) return initial
 	let dir = initial
+	let configured: string | undefined
+	let unverified: string | undefined
 	while (true) {
-		try { if ((await fs.stat(path.join(dir, 'server.yaml'))).isFile()) return dir } catch { /* walk up */ }
+		const runtime = await read_dev_runtime(dir)
+		if (runtime && await runtime_is_running(runtime)) return dir
+		if (!unverified && runtime && runtime_has_live_process(runtime)) unverified = dir
+		try { if (!configured && (await fs.stat(path.join(dir, 'server.yaml'))).isFile()) configured = dir } catch { /* walk up */ }
 		const parent = path.dirname(dir)
-		if (parent === dir) return initial // Legacy single-site workspace.
+		if (parent === dir) return unverified ?? configured ?? initial
 		dir = parent
 	}
 }
@@ -37,9 +38,14 @@ export async function read_dev_logs(start: string, lines = 100, previous = false
 		const start = Math.max(0, stat.size - LOG_READ_LIMIT)
 		const buffer = Buffer.alloc(stat.size - start)
 		const { bytesRead } = await handle.read(buffer, 0, buffer.length, start)
+		let boundary = start === 0
+		if (start > 0) {
+			const previous = Buffer.alloc(1)
+			boundary = (await handle.read(previous, 0, 1, start - 1)).bytesRead === 1 && previous[0] === 0x0a
+		}
 		let text = buffer.subarray(0, bytesRead).toString('utf8')
 		// Drop a partial first line/UTF-8 character when reading a bounded tail.
-		if (start > 0) text = text.includes('\n') ? text.slice(text.indexOf('\n') + 1) : ''
+		if (!boundary) text = text.includes('\n') ? text.slice(text.indexOf('\n') + 1) : ''
 		const entries = text.replace(/\n$/, '').split('\n')
 		return {
 			available: true, workspace, log_file,

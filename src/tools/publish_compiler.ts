@@ -270,6 +270,10 @@ export async function compileAndUploadPublishArtifacts(
 		if (!richTextFields.has(entry.field)) continue;
 		const value = normalizeEntryValue(entry.value);
 		if (typeof value !== "string") {
+			const content = value && typeof value === "object" ? (value as { content?: unknown }).content : undefined;
+			if (content != null && !Array.isArray(content)) {
+				throw new Error(`Invalid rich-text entry ${entry.id}: content must be an array`);
+			}
 			try { renderRichText(value); }
 			catch (error) { throw new Error(`Invalid rich-text entry ${entry.id}: ${String(error)}`); }
 		}
@@ -870,7 +874,9 @@ function buildContent(
 			const sourcePage = options.page ?? (target.kind === "page_section" ? graph.pages.find((page) => page.id === target.entity.page) : undefined);
 			if (!sourcePage) continue;
 
-			const sourceContent = contentFor(graph, { kind: "page", entity: sourcePage }, { page: currentPage, siteFieldPath: options.siteFieldPath });
+			const sourceTarget = { kind: "page" as const, entity: sourcePage };
+			const sourceContent = buildContent(graph, sourceTarget, fieldsFor(graph, sourceTarget), entriesFor(graph, sourceTarget),
+				{ page: currentPage, rootField: sourceField, siteFieldPath: options.siteFieldPath });
 			if (!content.en) content.en = {};
 			content.en[field.key] = sourceContent.en?.[sourceField.key] ?? getEmptyValue(sourceField);
 			continue;

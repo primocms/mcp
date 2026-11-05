@@ -98,3 +98,28 @@ test('stopped nested site logs cannot hide a live ancestor workspace', async t =
  assert.equal((await getDevStatus({site_path:site})).running,true);
  assert.equal((await getDevLogs({site_path:site})).text,'active workspace log\n');
 });
+
+test('status and logs from a child folder find a live nested session',async t=>{
+ const {site,runtime}=await fixture(t)
+ await fs.mkdir(path.join(site,'.primo'))
+ const child=path.join(site,'pages');await fs.mkdir(child)
+ const nested={...runtime,workspace:await fs.realpath(site)}
+ await fs.writeFile(path.join(site,'.primo/dev-server.json'),JSON.stringify(nested))
+ await fs.writeFile(path.join(site,'.primo/dev.log'),'nested session\n')
+ globalThis.fetch=async()=>Response.json(nested)
+ assert.equal((await getDevStatus({site_path:child})).running,true)
+ assert.equal((await getDevLogs({site_path:child})).text,'nested session\n')
+})
+
+test('an unverified live nested process retains its diagnostics without a live ancestor',async t=>{
+ const {site,workspace,runtime}=await fixture(t)
+ await fs.unlink(path.join(workspace,'.primo/dev-server.json'))
+ await fs.mkdir(path.join(site,'.primo'))
+ await fs.writeFile(path.join(site,'.primo/dev-server.json'),JSON.stringify({...runtime,workspace:await fs.realpath(site)}))
+ await fs.writeFile(path.join(site,'.primo/dev.log'),'nested startup diagnostics\n')
+ globalThis.fetch=async()=>{throw new Error('identity endpoint unavailable')}
+ const status=await getDevStatus({site_path:site})
+ assert.equal(status.running,false);assert.equal(status.process_alive,true)
+ assert.equal(await fs.realpath(status.workspace),await fs.realpath(site))
+ assert.equal((await getDevLogs({site_path:site})).text,'nested startup diagnostics\n')
+})

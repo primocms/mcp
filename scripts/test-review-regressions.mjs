@@ -86,3 +86,31 @@ for (const branch of ['page-field', 'page', 'page-list']) {
     assert.equal(uploads.size, 0);
   });
 }
+
+test('non-array rich-text content fails preflight without uploads',async()=>{
+ const graph=fixture()
+ graph.site_symbol_fields.push({id:'body',key:'body',type:'rich-text',symbol:'hero'})
+ graph.page_section_entries.push({id:'bad-body',section:'section',field:'body',locale:'en',value:{type:'doc',content:{text:'must not disappear'}}})
+ const uploads=new Map()
+ await assert.rejects(publish(graph,{uploads}),/Invalid rich-text entry bad-body: content must be an array/)
+ assert.equal(uploads.size,0)
+})
+
+test('bounded log window retains its first complete line',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'primo-review-boundary-'))
+ t.after(()=>fs.rm(root,{recursive:true,force:true}))
+ await fs.mkdir(path.join(root,'.primo'))
+ const tail='first complete\n'+'x'.repeat(256*1024-'first complete\n'.length-1)+'\n'
+ await fs.writeFile(path.join(root,'.primo/dev.log'),'prefix\n'+tail)
+ assert((await getDevLogs({site_path:root,lines:1000})).text.startsWith('first complete\n'))
+})
+
+test('page-field aliases do not recurse through unrelated page fields',async()=>{
+ const graph=fixture()
+ graph.site_fields=[{id:'alias',key:'alias',type:'page-field',site:'site',config:{field:'title'}}]
+ graph.page_type_fields=[{id:'title',key:'title',type:'text',page_type:'default'},{id:'backref',key:'backref',type:'site-field',page_type:'default',config:{field:'alias'}}]
+ graph.page_entries=[{id:'title-value',page:'home',field:'title',value:'Referenced title',locale:'en'}]
+ graph.site.head='<title>{alias}</title>'
+ const result=await publish(graph)
+ assert.match(result.uploads.get('pages/home/compiled_html'),/Referenced title/)
+})
