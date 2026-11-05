@@ -74,3 +74,15 @@ test('malformed CMS PIDs are rejected by the runtime reader', async t => {
   await fs.writeFile(path.join(root, '.primo/dev-server.json'), JSON.stringify(runtime));
   assert.equal(await read_dev_runtime(root), null);
 });
+
+for (const branch of ['page-field', 'page', 'page-list']) {
+  test(`${branch} aliases detect cycles before uploading any artifacts`, async () => {
+    const graph = fixture();
+    graph.site_fields = [{ id: 'site-alias', key: 'alias', type: branch, site: 'site', config: branch === 'page-field' ? { field: 'page-alias' } : { page_type: 'default' } }];
+    graph.page_type_fields = [{ id: 'page-alias', key: 'pageAlias', type: 'site-field', page_type: 'default', config: { field: 'site-alias' } }];
+    if (branch === 'page') graph.site_entries = [{ id: 'page-link', field: 'site-alias', value: 'home', locale: 'en' }];
+    const uploads = new Map();
+    await assert.rejects(publish(graph, { uploads }), /Cyclic site-field reference/);
+    assert.equal(uploads.size, 0);
+  });
+}

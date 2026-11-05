@@ -87,3 +87,14 @@ test('MCP reads workspace logs after shutdown, including rotation, without start
  assert.throws(() => readGetDevLogsInput({ site_path: site, lines: '10' }), /1 to 1000/);
  assert.throws(() => readGetDevLogsInput({ site_path: site, previous: 'false' }), /boolean/);
 });
+
+test('stopped nested site logs cannot hide a live ancestor workspace', async t => {
+ const {site,workspace,runtime}=await fixture(t);
+ await fs.mkdir(path.join(site,'.primo'));
+ await fs.writeFile(path.join(site,'.primo/dev.log'),'stale single-site log\n');
+ await fs.writeFile(path.join(site,'.primo/dev-server.json'),JSON.stringify({...runtime,workspace:await fs.realpath(site),pid:2147483647}));
+ await fs.writeFile(path.join(workspace,'.primo/dev.log'),'active workspace log\n');
+ assert.equal((await getDevStatus({site_path:site})).workspace,workspace);
+ assert.equal((await getDevStatus({site_path:site})).running,true);
+ assert.equal((await getDevLogs({site_path:site})).text,'active workspace log\n');
+});

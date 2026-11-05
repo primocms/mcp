@@ -276,6 +276,10 @@ export async function compileAndUploadPublishArtifacts(
 	}
 	// Site aliases can form cycles even when no block directly references them.
 	contentFor(graph, { kind: "site", entity: graph.site });
+    for (const page of graph.pages) {
+        contentFor(graph, { kind: "site", entity: graph.site }, { page });
+        contentFor(graph, { kind: "page", entity: page }, { page });
+    }
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "primo-mcp-publish-"));
 
 	try {
@@ -802,7 +806,7 @@ function contentFor(
 		| { kind: "page_section"; entity: PageSectionRecord }
 		| { kind: "page_type_section"; entity: PageTypeSectionRecord }
 		| { kind: "page_type"; entity: PageTypeRecord },
-	options: { page?: PageRecord } = {}
+	options: { page?: PageRecord; siteFieldPath?: Set<string> } = {}
 ): Record<string, Record<string, unknown>> {
 	const fields = fieldsFor(graph, target);
 	const entries = entriesFor(graph, target);
@@ -811,7 +815,7 @@ function contentFor(
 
 // Test-only seam: lets scripts drive the pure content-building logic against a
 // hand-built graph without a live API. Not part of the public tool surface.
-export function __test_buildSiteContent(graph: SiteGraph, options: { page?: PageRecord } = {}): Record<string, Record<string, unknown>> {
+export function __test_buildSiteContent(graph: SiteGraph, options: { page?: PageRecord; siteFieldPath?: Set<string> } = {}): Record<string, Record<string, unknown>> {
 	return contentFor(graph, { kind: "site", entity: graph.site }, options);
 }
 
@@ -866,7 +870,7 @@ function buildContent(
 			const sourcePage = options.page ?? (target.kind === "page_section" ? graph.pages.find((page) => page.id === target.entity.page) : undefined);
 			if (!sourcePage) continue;
 
-			const sourceContent = contentFor(graph, { kind: "page", entity: sourcePage }, { page: currentPage });
+			const sourceContent = contentFor(graph, { kind: "page", entity: sourcePage }, { page: currentPage, siteFieldPath: options.siteFieldPath });
 			if (!content.en) content.en = {};
 			content.en[field.key] = sourceContent.en?.[sourceField.key] ?? getEmptyValue(sourceField);
 			continue;
@@ -969,7 +973,7 @@ function buildContent(
 			const pageId = normalizeEntryValue(entry.value);
 			const page = typeof pageId === "string" ? graph.pages.find((candidate) => candidate.id === pageId) : undefined;
 			if (!page) continue;
-			const pageContent = contentFor(graph, { kind: "page", entity: page }, { page: currentPage });
+			const pageContent = contentFor(graph, { kind: "page", entity: page }, { page: currentPage, siteFieldPath: options.siteFieldPath });
 			localeContent(content, entry.locale || "en")[field.key] = {
 				...(pageContent[entry.locale || "en"] ?? {}),
 				_meta: pageMeta(graph, page)
@@ -983,7 +987,7 @@ function buildContent(
 			const pages = graph.pages.filter((page) => page.page_type === pageTypeId).sort(sortByIndex);
 			if (!content.en) content.en = {};
 			content.en[field.key] = pages.map((page) => ({
-				...(contentFor(graph, { kind: "page", entity: page }, { page: currentPage }).en ?? {}),
+				...(contentFor(graph, { kind: "page", entity: page }, { page: currentPage, siteFieldPath: options.siteFieldPath }).en ?? {}),
 				_meta: pageMeta(graph, page)
 			}));
 			continue;

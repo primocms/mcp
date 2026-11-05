@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { read_dev_runtime, runtime_is_running } from './dev-runtime.js'
 
 export const LOG_READ_LIMIT = 256 * 1024
 
@@ -7,10 +8,10 @@ export const LOG_READ_LIMIT = 256 * 1024
 // bounded tail behavior compatible across independently installed versions.
 export async function find_dev_workspace(start: string): Promise<string> {
 	const initial = path.resolve(start)
-	// A single-site dev session writes its own runtime/log even inside a workspace.
-	for (const marker of ['.primo/dev-server.json', '.primo/dev.log']) {
-		try { if ((await fs.stat(path.join(initial, marker))).isFile()) return initial } catch { /* no local session */ }
-	}
+    // Persistent logs and stale runtime files outlive their session. Prefer a
+    // nested single-site session only after confirming its live identity.
+    const runtime = await read_dev_runtime(initial)
+    if (runtime && await runtime_is_running(runtime)) return initial
 	let dir = initial
 	while (true) {
 		try { if ((await fs.stat(path.join(dir, 'server.yaml'))).isFile()) return dir } catch { /* walk up */ }
