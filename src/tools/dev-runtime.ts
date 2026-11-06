@@ -30,7 +30,9 @@ export async function read_dev_runtime(dir: string): Promise<DevRuntime | null> 
 		const value = JSON.parse(await fs.readFile(path.join(dir, RUNTIME_FILE), 'utf8'))
 		if (value.version !== 1 || value.workspace !== await fs.realpath(dir)
 			|| !Number.isInteger(value.port) || value.port < 1 || value.port > 65534
-			|| !Number.isInteger(value.pid) || typeof value.instance !== 'string') return null
+			|| !Number.isInteger(value.pid) || value.pid <= 0
+			|| (value.cms_pid !== undefined && (!Number.isInteger(value.cms_pid) || value.cms_pid <= 0))
+			|| typeof value.instance !== 'string') return null
 		return value
 	} catch { return null }
 }

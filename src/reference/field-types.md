@@ -312,7 +312,9 @@ A bare field key (`field: hero_image`) only resolves when exactly one page type 
 
 ## site-field
 
-Reference a site-wide field. Set `config.field` to the site field name.
+Reference a site-wide field. Set `config.field` to a top-level site field name (key). Existing field IDs are also supported; an exact ID match takes precedence over a key match. References resolve within the owning site. Nested fields cannot be referenced directly: reference their root group or repeater instead.
+
+Exports write portable keys. Import resolves them against `site/fields.yaml` or the existing site fields on partial uploads. Publishing accepts either form without rewriting source records. Missing or ambiguous references fail publication with the field and repair instructions; check `config.field` against the site’s top-level fields.
 
 ```yaml
 - name: phone_number

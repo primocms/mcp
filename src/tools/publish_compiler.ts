@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -10,6 +11,8 @@ import postcss from "postcss";
 import postcssNested from "postcss-nested";
 import * as svelteCompiler from "svelte/compiler";
 import { render } from "svelte/server";
+import { cachedScriptVersion, pageFileMatches, pageFileName, scriptFileName } from "./publish-cache.js";
+import { renderRichText } from "./publish-rich-text.js";
 
 const { compile } = svelteCompiler;
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -97,6 +100,7 @@ export type SiteRecord = RecordBase & {
 	host?: string;
 	head?: string;
 	foot?: string;
+	preview?: string;
 };
 
 type PageRecord = RecordBase & {
@@ -106,6 +110,8 @@ type PageRecord = RecordBase & {
 	page_type: string;
 	site: string;
 	index?: number;
+	compiled_html?: string;
+	compiled_html_hash?: string;
 };
 
 type PageTypeRecord = RecordBase & {
@@ -121,6 +127,8 @@ type SymbolRecord = RecordBase & {
 	css: string;
 	js: string;
 	site: string;
+	compiled_js?: string;
+	compiled_js_hash?: string;
 };
 
 type FieldRecord = RecordBase & {
@@ -185,6 +193,7 @@ type SiteGraph = {
 };
 
 type ComponentInput = {
+	filename: string;
 	html: string;
 	js: string;
 	css: string;
@@ -201,7 +210,41 @@ type CompileHead = {
 type PublishArtifactSummary = {
 	pageCount: number;
 	symbolCount: number;
+	pagesCompiled: number;
+	pagesSkipped: number;
+	symbolsCompiled: number;
+	symbolsSkipped: number;
 };
+
+// Actual shipped compiler code participates in invalidation, including upgrades
+// that don't change authored content. Separate producers cannot share output.
+const require = createRequire(import.meta.url);
+function dependencyVersion(name: string): string {
+	let directory = path.dirname(require.resolve(name === "@tiptap/pm" ? "@tiptap/pm/model" : name));
+	while (true) {
+		try {
+			const metadata = JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8"));
+			if (metadata.name === name && typeof metadata.version === "string") return metadata.version;
+		} catch { /* Keep walking through package entry subdirectories. */ }
+		const parent = path.dirname(directory);
+		if (parent === directory) throw new Error(`Cannot identify renderer dependency ${name}.`);
+		directory = parent;
+	}
+}
+const rendererDependencies = ["markdown-it", "zeed-dom", "postcss", "postcss-nested",
+	...Object.keys(JSON.parse(readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8")).dependencies)
+		.filter((name) => name.startsWith("@tiptap/"))].sort();
+const COMPILER_PROFILE = ["mcp-publish-v1", svelteCompiler.VERSION, esbuild.version, PRIMO_BASELINE_CSS,
+	rendererDependencies.map((name) => [name, dependencyVersion(name)]),
+	createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url)))
+		.update(readFileSync(new URL("./publish-rich-text.js", import.meta.url)))
+		.update(readFileSync(new URL("./publish-cache.js", import.meta.url))).digest("hex")];
+function inputHash(value: unknown): string {
+	return createHash("sha256").update(JSON.stringify([COMPILER_PROFILE, value])).digest("hex");
+}
+
+type SymbolArtifact = { symbolId: string; hash: string; version: string; js?: string };
+type PageArtifact = { pageId: string; hash: string; html?: string; isHomepage: boolean };
 
 const cssCache = new Map<string, string>();
 const markdown = new MarkdownIt({
@@ -216,31 +259,64 @@ export async function compileAndUploadPublishArtifacts(
 	site: SiteRecord
 ): Promise<PublishArtifactSummary> {
 	const graph = await fetchSiteGraph(apiUrl, token, site);
+	// Fail before uploading any artifacts, including unused/nested references.
+	for (const field of [...graph.siteFields, ...graph.symbolFields, ...graph.pageTypeFields]) {
+		if (field.type === "site-field") resolveSiteField(graph, field);
+	}
+	const richTextFields = new Set([...graph.siteFields, ...graph.symbolFields, ...graph.pageTypeFields]
+		.filter((field) => field.type === "rich-text").map((field) => field.id));
+	for (const entry of [...graph.siteEntries, ...graph.symbolEntries, ...graph.pageEntries,
+		...graph.pageSectionEntries, ...graph.pageTypeSectionEntries, ...graph.pageTypeEntries]) {
+		if (!richTextFields.has(entry.field)) continue;
+		const value = normalizeEntryValue(entry.value);
+		if (typeof value !== "string") {
+			const content = value && typeof value === "object" ? (value as { content?: unknown }).content : undefined;
+			if (content != null && !Array.isArray(content)) {
+				throw new Error(`Invalid rich-text entry ${entry.id}: content must be an array`);
+			}
+			try { renderRichText(value); }
+			catch (error) { throw new Error(`Invalid rich-text entry ${entry.id}: ${String(error)}`); }
+		}
+	}
+	// Site aliases can form cycles even when no block directly references them.
+	contentFor(graph, { kind: "site", entity: graph.site });
+    for (const page of graph.pages) {
+        contentFor(graph, { kind: "site", entity: graph.site }, { page });
+        contentFor(graph, { kind: "page", entity: page }, { page });
+    }
 	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "primo-mcp-publish-"));
 
 	try {
 		const symbolArtifacts = await compileSymbols(graph, tempDir);
+		const changedSymbols = symbolArtifacts.filter((artifact) => artifact.js !== undefined);
 		await Promise.all(
-			symbolArtifacts.map((artifact) =>
-				uploadTextFileField(apiUrl, token, "site_symbols", artifact.symbolId, "compiled_js", artifact.js, "symbol.js", "text/javascript")
+			changedSymbols.map((artifact) =>
+				uploadTextFileField(apiUrl, token, "site_symbols", artifact.symbolId, "compiled_js", artifact.js!, scriptFileName(artifact.hash, artifact.version), "text/javascript",
+					typeof graph.symbols.find((symbol) => symbol.id === artifact.symbolId)?.compiled_js_hash === "string" ? { compiled_js_hash: artifact.hash } : {})
 			)
 		);
 
 		const pageArtifacts = await compilePages(graph, tempDir, symbolVersions(symbolArtifacts));
+		const changedPages = pageArtifacts.filter((artifact) => artifact.html !== undefined);
 		await Promise.all(
-			pageArtifacts.map((artifact) =>
-				uploadTextFileField(apiUrl, token, "pages", artifact.pageId, "compiled_html", artifact.html, "index.html", "text/html")
+			changedPages.map((artifact) =>
+				uploadTextFileField(apiUrl, token, "pages", artifact.pageId, "compiled_html", artifact.html!, pageFileName(artifact.hash), "text/html",
+					typeof graph.pages.find((page) => page.id === artifact.pageId)?.compiled_html_hash === "string" ? { compiled_html_hash: artifact.hash } : {})
 			)
 		);
 
-		const homepage = pageArtifacts.find((artifact) => artifact.isHomepage);
+		const homepage = changedPages.find((artifact) => artifact.isHomepage);
 		if (homepage) {
-			await uploadTextFileField(apiUrl, token, "sites", site.id, "preview", homepage.html, "index.html", "text/html");
+			await uploadTextFileField(apiUrl, token, "sites", site.id, "preview", homepage.html!, pageFileName(homepage.hash), "text/html");
 		}
 
 		return {
 			pageCount: pageArtifacts.length,
-			symbolCount: symbolArtifacts.length
+			symbolCount: symbolArtifacts.length,
+			pagesCompiled: changedPages.length,
+			pagesSkipped: pageArtifacts.length - changedPages.length,
+			symbolsCompiled: changedSymbols.length,
+			symbolsSkipped: symbolArtifacts.length - changedSymbols.length
 		};
 	} finally {
 		await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -338,14 +414,21 @@ async function fetchAll<T>(
 	return items;
 }
 
-async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<Array<{ symbolId: string; js: string }>> {
-	const artifacts: Array<{ symbolId: string; js: string }> = [];
+async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<SymbolArtifact[]> {
+	const artifacts: SymbolArtifact[] = [];
 
 	for (const symbol of graph.symbols) {
 		if (!symbol.js) continue;
 
 		const processedCss = await processCss(symbol.css || "");
 		const symbolFields = graph.symbolFields.filter((field) => field.symbol === symbol.id);
+		const hash = inputHash({ html: symbol.html, js: symbol.js, css: processedCss,
+			fieldKeys: symbolFields.map((field) => field.key).filter(Boolean) });
+		const version = cachedScriptVersion(symbol.compiled_js, symbol.compiled_js_hash, hash);
+		if (version) {
+			artifacts.push({ symbolId: symbol.id, hash, version });
+			continue;
+		}
 		const symbolContent = contentFor(graph, { kind: "symbol", entity: symbol })["en"] ?? {};
 		const genericData = Object.fromEntries(
 			symbolFields
@@ -356,6 +439,7 @@ async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<Array<
 
 		const js = await compileClientBundle(
 			{
+				filename: `symbol-${symbol.id}.svelte`,
 				html: symbol.html,
 				js: symbol.js,
 				css: processedCss,
@@ -364,7 +448,7 @@ async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<Array<
 			tempDir
 		);
 
-		artifacts.push({ symbolId: symbol.id, js });
+		artifacts.push({ symbolId: symbol.id, hash, version: createHash("sha256").update(js).digest("hex"), js });
 	}
 
 	return artifacts;
@@ -372,12 +456,13 @@ async function compileSymbols(graph: SiteGraph, tempDir: string): Promise<Array<
 
 // Version imports by the exact uploaded bytes so cached client code cannot
 // hydrate new server markup with obsolete Svelte CSS class names.
-function symbolVersions(artifacts: Array<{ symbolId: string; js: string }>): Map<string, string> {
-	return new Map(artifacts.map(({ symbolId, js }) => [symbolId, createHash("sha256").update(js).digest("hex")]));
+function symbolVersions(artifacts: SymbolArtifact[]): Map<string, string> {
+	return new Map(artifacts.map(({ symbolId, version }) => [symbolId, version]));
 }
 
-async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<string, string>): Promise<Array<{ pageId: string; html: string; isHomepage: boolean }>> {
-	const artifacts: Array<{ pageId: string; html: string; isHomepage: boolean }> = [];
+async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<string, string>): Promise<PageArtifact[]> {
+	const artifacts: PageArtifact[] = [];
+	const homepageId = graph.pages.find((page) => !page.parent)?.id;
 
 	for (const page of graph.pages) {
 		const pageType = graph.pageTypes.find((candidate) => candidate.id === page.page_type);
@@ -401,30 +486,33 @@ async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<str
 			...(contentFor(graph, { kind: "page", entity: page }, { page })["en"] ?? {})
 		};
 
+		const hash = inputHash({
+			page: { id: page.id, name: page.name, slug: page.slug, parent: page.parent, page_type: page.page_type },
+			head: [graph.site.head ?? "", pageType.head ?? ""], foot: graph.site.foot ?? "", data: siteData,
+			sections: await Promise.all(sections.map(async (section) => {
+				const symbol = graph.symbols.find((candidate) => candidate.id === section.symbol);
+				return { id: section.id, symbol: section.symbol, zone: "zone" in section ? section.zone : "body",
+					data: contentFor(graph, sectionKind(section), { page })["en"] ?? {},
+					// Include every source, even blocks without client-side JavaScript.
+					source: symbol ? { html: symbol.html, js: symbol.js, css: await processCss(symbol.css || "") } : null,
+					version: versions.get(section.symbol) ?? null };
+			}))
+		});
+		if (page.compiled_html_hash === hash && pageFileMatches(page.compiled_html, hash) &&
+			(page.id !== homepageId || pageFileMatches(graph.site.preview, hash))) {
+			artifacts.push({ pageId: page.id, hash, isHomepage: page.id === homepageId });
+			continue;
+		}
+
 		const head = {
 			code: `<style data-primo-baseline>${PRIMO_BASELINE_CSS}</style>${graph.site.head ?? ""}${pageType.head ?? ""}`,
 			data: siteData
 		};
-		const headWithoutCode = {
-			code: "",
-			data: siteData
-		};
-
-		const headerResult = headerSections.length > 0
-			? await compileSectionGroup(graph, headerSections, page, head, tempDir)
-			: { body: "", head: "" };
-		const bodyResult = bodySections.length > 0
-			? await compileSectionGroup(graph, bodySections, page, headerSections.length > 0 ? headWithoutCode : head, tempDir)
-			: { body: "", head: "" };
-		const footerResult = footerSections.length > 0
-			? await compileSectionGroup(
-					graph,
-					footerSections,
-					page,
-					headerSections.length > 0 || bodySections.length > 0 ? headWithoutCode : head,
-					tempDir
-				)
-			: { body: "", head: "" };
+		const pageHead = await compileServerBundle([], head, tempDir);
+		const emptyHead = { code: "", data: siteData };
+		const headerResult = await compileSectionGroup(graph, headerSections, page, emptyHead, tempDir);
+		const bodyResult = await compileSectionGroup(graph, bodySections, page, emptyHead, tempDir);
+		const footerResult = await compileSectionGroup(graph, footerSections, page, emptyHead, tempDir);
 
 		const bodyContent =
 			(headerResult.body ? `<header>${headerResult.body}</header>` : "") +
@@ -442,6 +530,7 @@ async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<str
 
 		const html =
 			`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Primo" />` +
+			pageHead.head +
 			(headerResult.head || "") +
 			(bodyResult.head || "") +
 			(footerResult.head || "") +
@@ -453,8 +542,9 @@ async function compilePages(graph: SiteGraph, tempDir: string, versions: Map<str
 
 		artifacts.push({
 			pageId: page.id,
+			hash,
 			html,
-			isHomepage: !page.parent
+			isHomepage: page.id === homepageId
 		});
 	}
 
@@ -476,6 +566,7 @@ async function compileSectionGroup(
 
 		const data = contentFor(graph, sectionKind(section), { page })["en"] ?? {};
 		components.push({
+			filename: `symbol-${symbol.id}.svelte`,
 			html: symbol.html,
 			js: symbol.js,
 			css: await processCss(symbol.css || ""),
@@ -517,8 +608,8 @@ function buildHydrationScript(
 async function compileClientBundle(component: ComponentInput, tempDir: string): Promise<string> {
 	return bundleVirtualProject({
 		files: new Map([
-			["./entry.js", `export { default } from './App.svelte';\nexport { hydrate } from 'svelte';`],
-			["./App.svelte", componentSource(component)]
+			["./entry.js", `export { default } from './${component.filename}';\nexport { hydrate } from 'svelte';`],
+			[`./${component.filename}`, componentSource(component)]
 		]),
 		svelteOptions: {
 			generate: "client",
@@ -536,14 +627,20 @@ async function compileServerBundle(
 	tempDir: string
 ): Promise<{ body: string; head: string }> {
 	const files = new Map<string, string>();
-	files.set("./entry.js", `export { default } from './App.svelte';`);
-	files.set("./App.svelte", appWrapperSource(components, head));
+	const svelteFilenames = new Map<string, string>();
+	files.set("./entry.js", `export { default } from './App.svelte';\n` + components.map((component, index) =>
+		`export { default as component_${index} } from './section-${index}.svelte';`
+	).join("\n"));
+	files.set("./App.svelte", appWrapperSource([], head));
 	components.forEach((component, index) => {
-		files.set(`./Component_${index}.svelte`, componentSource(component));
+		const virtualPath = `./section-${index}.svelte`;
+		files.set(virtualPath, componentSource(component));
+		svelteFilenames.set(virtualPath, `./${component.filename}`);
 	});
 
 	const code = await bundleVirtualProject({
 		files,
+		svelteFilenames,
 		svelteOptions: {
 			generate: "server",
 			css: "injected",
@@ -557,22 +654,18 @@ async function compileServerBundle(
 	await fs.writeFile(bundlePath, code);
 	const module = (await import(`${pathToFileURL(bundlePath).href}?t=${Date.now()}`)) as { default: unknown };
 
-	const props: Record<string, unknown> = {};
-	components.forEach((component, index) => {
-		if (Object.keys(component.data).length > 0) {
-			props[`component_${index}_props`] = component.data;
-		}
-	});
-	props.head_props = head.data;
-
-	const rendered = (render as (component: unknown, options: { props: Record<string, unknown> }) => { body: string; head: string })(
-		module.default,
-		{ props }
-	);
-	return {
-		body: rendered.body,
-		head: rendered.head
-	};
+	// Each section is hydrated independently. Render the same component as an
+	// independent server root so hydration retains its DOM and content.
+	const renderComponent = render as (component: unknown, options: { props: Record<string, unknown> }) => { body: string; head: string };
+	const result = renderComponent(module.default, { props: { head_props: head.data } });
+	let body = "";
+	let renderedHead = result.head;
+	for (const [index, component] of components.entries()) {
+		const rendered = renderComponent((module as unknown as Record<string, unknown>)[`component_${index}`], { props: component.data });
+		body += (component.wrapper_start ?? "") + rendered.body + (component.wrapper_end ?? "");
+		renderedHead += rendered.head;
+	}
+	return { body, head: renderedHead };
 }
 
 // Exported for scripts/test-svelte-resolution.mjs. `packageRoot` overrides the
@@ -580,12 +673,14 @@ async function compileServerBundle(
 // still resolves through SVELTE_PACKAGE_DIR; production callers never pass it.
 export async function bundleVirtualProject({
 	files,
+	svelteFilenames,
 	svelteOptions,
 	platform,
 	tempDir,
 	packageRoot = PACKAGE_ROOT
 }: {
 	files: Map<string, string>;
+	svelteFilenames?: Map<string, string>;
 	svelteOptions: Record<string, unknown>;
 	platform: "browser" | "node";
 	tempDir: string;
@@ -633,13 +728,12 @@ export async function bundleVirtualProject({
 						if (source === undefined) return undefined;
 
 						if (args.path.endsWith(".svelte")) {
-							// Don't pass `filename` — Svelte's default cssHash falls back to hashing the CSS
-							// when filename is unknown, which gives each component a unique scoped class.
-							// Passing the virtual filename made all `./Component_N.svelte` files share a hash
-							// across the header/body/footer bundles, producing duplicate `<style id>` blocks
-							// that one zone's hydration would clobber, leaving the others unstyled.
+							// Symbol identity must match in server and client builds, including
+							// head IDs and CSS scopes across independently rendered sections.
 							const compiled = compile(source, {
-								...svelteOptions
+								...svelteOptions,
+								filename: svelteFilenames?.get(args.path) ?? args.path,
+								cssHash: ({ filename, css, hash }) => `svelte-${hash(filename + css)}`
 							});
 							return {
 								contents: compiled.js.code,
@@ -716,7 +810,7 @@ function contentFor(
 		| { kind: "page_section"; entity: PageSectionRecord }
 		| { kind: "page_type_section"; entity: PageTypeSectionRecord }
 		| { kind: "page_type"; entity: PageTypeRecord },
-	options: { page?: PageRecord } = {}
+	options: { page?: PageRecord; siteFieldPath?: Set<string> } = {}
 ): Record<string, Record<string, unknown>> {
 	const fields = fieldsFor(graph, target);
 	const entries = entriesFor(graph, target);
@@ -725,13 +819,26 @@ function contentFor(
 
 // Test-only seam: lets scripts drive the pure content-building logic against a
 // hand-built graph without a live API. Not part of the public tool surface.
-export function __test_buildSiteContent(graph: SiteGraph, options: { page?: PageRecord } = {}): Record<string, Record<string, unknown>> {
+export function __test_buildSiteContent(graph: SiteGraph, options: { page?: PageRecord; siteFieldPath?: Set<string> } = {}): Record<string, Record<string, unknown>> {
 	return contentFor(graph, { kind: "site", entity: graph.site }, options);
 }
 
 export async function __test_compilePages(graph: SiteGraph, tempDir: string) {
 	const artifacts = await compileSymbols(graph, tempDir);
 	return compilePages(graph, tempDir, symbolVersions(artifacts));
+}
+
+// Keys are the portable export format; IDs remain valid for existing sites.
+// Resolve only roots in this site, with IDs taking precedence over key collisions.
+function resolveSiteField(graph: SiteGraph, field: FieldRecord): FieldRecord & { key: string } {
+	const reference = stringFromConfig(field, "field");
+	const roots = graph.siteFields.filter((candidate) => candidate.site === graph.site.id && !candidate.parent);
+	const byId = roots.find((candidate) => candidate.id === reference);
+	const byKey = roots.filter((candidate) => candidate.key === reference);
+	const resolved = byId ?? (byKey.length === 1 ? byKey[0] : undefined);
+	if (reference && resolved?.key) return resolved as FieldRecord & { key: string };
+	const owner = field.symbol ? `block "${graph.symbols.find((symbol) => symbol.id === field.symbol)?.name || field.symbol}"` : field.page_type ? `page type "${field.page_type}"` : `site "${graph.site.name}"`;
+	throw new Error(`Unresolved or ambiguous site-field reference ${JSON.stringify(reference || "")} in ${owner}, field "${field.key || field.id}" (${field.id}). Set config.field to the ID or unique key of a top-level field in site "${graph.site.name}" (${graph.site.id}); check site/fields.yaml.`);
 }
 
 function buildContent(
@@ -745,13 +852,13 @@ function buildContent(
 		| { kind: "page_type"; entity: PageTypeRecord },
 	fields: FieldRecord[],
 	entries: EntryRecord[],
-	options: { page?: PageRecord; parentField?: FieldRecord; parentEntry?: EntryRecord } = {}
+	options: { page?: PageRecord; parentField?: FieldRecord; parentEntry?: EntryRecord; rootField?: FieldRecord; siteFieldPath?: Set<string> } = {}
 ): Record<string, Record<string, unknown>> {
 	// Preserve the viewed page when following references to other pages.
 	const currentPage = options.page;
 	const content: Record<string, Record<string, unknown>> = {};
 	const filteredFields = fields
-		.filter((field) => (options.parentField ? field.parent === options.parentField.id : !field.parent))
+		.filter((field) => (options.parentField ? field.parent === options.parentField.id : options.rootField ? field.id === options.rootField.id : !field.parent))
 		.filter((field) => !!field.key)
 		.sort(sortByIndex);
 
@@ -767,18 +874,21 @@ function buildContent(
 			const sourcePage = options.page ?? (target.kind === "page_section" ? graph.pages.find((page) => page.id === target.entity.page) : undefined);
 			if (!sourcePage) continue;
 
-			const sourceContent = contentFor(graph, { kind: "page", entity: sourcePage }, { page: currentPage });
+			const sourceTarget = { kind: "page" as const, entity: sourcePage };
+			const sourceContent = buildContent(graph, sourceTarget, fieldsFor(graph, sourceTarget), entriesFor(graph, sourceTarget),
+				{ page: currentPage, rootField: sourceField, siteFieldPath: options.siteFieldPath });
 			if (!content.en) content.en = {};
 			content.en[field.key] = sourceContent.en?.[sourceField.key] ?? getEmptyValue(sourceField);
 			continue;
 		}
 
 		if (field.type === "site-field") {
-			const sourceFieldId = stringFromConfig(field, "field");
-			const sourceField = sourceFieldId ? graph.siteFields.find((candidate) => candidate.id === sourceFieldId) : undefined;
-			if (!sourceField?.key) continue;
-
-			const sourceContent = contentFor(graph, { kind: "site", entity: graph.site }, { page: currentPage });
+			const sourceField = resolveSiteField(graph, field);
+			const visited = options.siteFieldPath ?? new Set<string>();
+			if (visited.has(field.id)) throw new Error(`Cyclic site-field reference at ${field.key} (${field.id}).`);
+			const sourceContent = buildContent(graph, { kind: "site", entity: graph.site },
+				graph.siteFields, graph.siteEntries, { page: currentPage, rootField: sourceField,
+					siteFieldPath: new Set([...visited, field.id]) });
 			if (!content.en) content.en = {};
 			content.en[field.key] = sourceContent.en?.[sourceField.key];
 			continue;
@@ -826,7 +936,8 @@ function buildContent(
 				content.en[field.key] = "";
 				continue;
 			}
-			localeContent(content, entry.locale || "en")[field.key] = renderRichTextFallback(normalizeEntryValue(entry.value));
+			const value = normalizeEntryValue(entry.value);
+			localeContent(content, entry.locale || "en")[field.key] = typeof value === "string" ? markdown.render(value) : renderRichText(value);
 			continue;
 		}
 
@@ -850,6 +961,8 @@ function buildContent(
 			localeContent(content, entry.locale || "en")[field.key] = {
 				alt: typeof image.alt === "string" ? image.alt : "",
 				url,
+				width: image.width,
+				height: image.height,
 				focal_point,
 				position: getImagePosition(focal_point)
 			};
@@ -866,7 +979,7 @@ function buildContent(
 			const pageId = normalizeEntryValue(entry.value);
 			const page = typeof pageId === "string" ? graph.pages.find((candidate) => candidate.id === pageId) : undefined;
 			if (!page) continue;
-			const pageContent = contentFor(graph, { kind: "page", entity: page }, { page: currentPage });
+			const pageContent = contentFor(graph, { kind: "page", entity: page }, { page: currentPage, siteFieldPath: options.siteFieldPath });
 			localeContent(content, entry.locale || "en")[field.key] = {
 				...(pageContent[entry.locale || "en"] ?? {}),
 				_meta: pageMeta(graph, page)
@@ -880,7 +993,7 @@ function buildContent(
 			const pages = graph.pages.filter((page) => page.page_type === pageTypeId).sort(sortByIndex);
 			if (!content.en) content.en = {};
 			content.en[field.key] = pages.map((page) => ({
-				...(contentFor(graph, { kind: "page", entity: page }, { page: currentPage }).en ?? {}),
+				...(contentFor(graph, { kind: "page", entity: page }, { page: currentPage, siteFieldPath: options.siteFieldPath }).en ?? {}),
 				_meta: pageMeta(graph, page)
 			}));
 			continue;
@@ -1011,10 +1124,12 @@ async function uploadTextFileField(
 	field: string,
 	contents: string,
 	fileName: string,
-	contentType: string
+	contentType: string,
+	metadata: Record<string, string> = {}
 ): Promise<void> {
 	const form = new FormData();
 	form.append(field, new Blob([contents], { type: contentType }), fileName);
+	for (const [key, value] of Object.entries(metadata)) form.append(key, value);
 
 	const response = await fetch(`${apiUrl}/api/collections/${collection}/records/${recordId}`, {
 		method: "PATCH",
@@ -1077,32 +1192,6 @@ function normalizeEntryValue(value: unknown): unknown {
 	return value;
 }
 
-function renderRichTextFallback(value: unknown): string {
-	if (typeof value === "string") return markdown.render(value);
-	if (value && typeof value === "object" && Array.isArray((value as { content?: unknown[] }).content)) {
-		return renderTipTapNodes((value as { content: unknown[] }).content);
-	}
-	return "";
-}
-
-function renderTipTapNodes(nodes: unknown[]): string {
-	return nodes
-		.map((node) => {
-			if (!node || typeof node !== "object") return "";
-			const typed = node as { type?: string; text?: string; content?: unknown[] };
-			if (typed.type === "text") return escapeHtml(typed.text ?? "");
-			const inner = Array.isArray(typed.content) ? renderTipTapNodes(typed.content) : "";
-			if (typed.type === "paragraph") return `<p>${inner}</p>`;
-			if (typed.type === "heading") return `<h2>${inner}</h2>`;
-			if (typed.type === "bulletList") return `<ul>${inner}</ul>`;
-			if (typed.type === "orderedList") return `<ol>${inner}</ol>`;
-			if (typed.type === "listItem") return `<li>${inner}</li>`;
-			if (typed.type === "blockquote") return `<blockquote>${inner}</blockquote>`;
-			return inner;
-		})
-		.join("");
-}
-
 function pageMeta(graph: SiteGraph, page: PageRecord): Record<string, unknown> {
 	return {
 		created_at: page.created,
@@ -1154,8 +1243,4 @@ function cssStringEscape(value: string): string {
 
 function jsStringEscape(value: string): string {
 	return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-function escapeHtml(value: string): string {
-	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

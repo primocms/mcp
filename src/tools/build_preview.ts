@@ -217,7 +217,7 @@ export async function buildPreview(input: BuildPreviewInput): Promise<BuildPrevi
 	return {
 		ok: true,
 		site_url: siteUrl,
-		message: `Compiled ${summary.pageCount} page${summary.pageCount === 1 ? "" : "s"} and ${summary.symbolCount} symbol script${summary.symbolCount === 1 ? "" : "s"}, then rebuilt preview for site ${site.site_id}. Visit ${siteUrl} to verify.`
+		message: `Compiled ${summary.pagesCompiled} page${summary.pagesCompiled === 1 ? "" : "s"} and ${summary.symbolsCompiled} symbol script${summary.symbolsCompiled === 1 ? "" : "s"}; reused ${summary.pagesSkipped} unchanged page${summary.pagesSkipped === 1 ? "" : "s"} and ${summary.symbolsSkipped} script${summary.symbolsSkipped === 1 ? "" : "s"}. Rebuilt preview for site ${site.site_id}. Visit ${siteUrl} to verify.`
 	};
 }
 

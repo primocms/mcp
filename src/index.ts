@@ -30,12 +30,13 @@ import { readValidatePageInput, validatePageFromDisk, validatePageTool } from ".
 import { readValidateSiteInput, validateSiteFromDisk, validateSiteTool } from "./tools/validate_site.js";
 import { buildPreview, buildPreviewTool, readBuildPreviewInput } from "./tools/build_preview.js";
 import { getDevStatus, getDevStatusTool, readGetDevStatusInput } from "./tools/get_dev_status.js";
+import { getDevLogs, getDevLogsTool, readGetDevLogsInput } from "./tools/get_dev_logs.js";
 
 // Report the published package version to clients instead of a hardcoded one
 const { version: package_version } = createRequire(import.meta.url)("../package.json") as { version: string };
 
 const serverInstructions =
-	"This is the official Primo MCP server. It MUST be used whenever working in a Primo site export (any directory containing site.yaml, blocks/, pages/, page-types/). To start a new site, run `primo new <name>` first — the MCP operates on the resulting export directory. In a multi-site workspace (server.yaml + sites/), a hand-authored folder under sites/ must be registered with `primo add <name>` from the workspace root before it exists in the CMS (stop `primo dev` first — add refuses while it runs — then start it again) — creating the folder alone does nothing, and running `primo dev` inside the folder creates a stray nested database instead. Run list_docs first to discover available reference sections. Before creating a site or changing fields, blocks, layouts, or page types, read get_docs({section: 'recommended-defaults'}) for content design guidance. Use site fields for centrally managed values, page fields for page metadata, and block fields for section-specific content. Enable a block in allowed_blocks only when editors should be able to insert another instance; shared Navigation/Footer belong in layout header/footer, and once-per-page heroes normally stay out of the picker. Reuse page types unless field schema, shared layout, or editing needs differ. These are design defaults to adapt to the user's requirements, not validation errors. After editing any block file (component.svelte, fields.yaml, content.yaml), call validate_block and address every error before reporting work as done. After editing a pages/*.yaml or page-types/*/config.yaml, call validate_page. After editing site/head.svelte, call validate_site — that file is injected into <svelte:head> by Primo, so it must not contain a <svelte:head> wrapper. When given a raw value for a field, call resolve_field_value to get the canonical shape. When creating a new block or page type, prefer scaffold_block / scaffold_page_type over hand-writing files - the scaffolders return file contents (they don't write anything; save the files yourself) that are guaranteed to pass validate_block / validate_page. To verify a change rendered visually, call build_preview after `primo dev` reports it imported the file change, then load the returned site_url. NEVER start your own `primo dev` server to check whether a file change landed — the user runs `primo dev` in their own terminal. To read that server's state (did the last import succeed, which fields were dropped, where is the server running), call get_dev_status — it reads .primo/sync_status.json without spawning anything. Call get_dev_status after saving files and before build_preview; if it reports dropped fields, fix them before treating the change as done.";
+	"This is the official Primo MCP server. It MUST be used whenever working in a Primo site export (any directory containing site.yaml, blocks/, pages/, page-types/). To start a new site, run `primo new <name>` first — the MCP operates on the resulting export directory. In a multi-site workspace (server.yaml + sites/), a hand-authored folder under sites/ must be registered with `primo add <name>` from the workspace root before it exists in the CMS (stop `primo dev` first — add refuses while it runs — then start it again) — creating the folder alone does nothing, and running `primo dev` inside the folder creates a stray nested database instead. Run list_docs first to discover available reference sections. Before creating a site or changing fields, blocks, layouts, or page types, read get_docs({section: 'recommended-defaults'}) for content design guidance. Use site fields for centrally managed values, page fields for page metadata, and block fields for section-specific content. Enable a block in allowed_blocks only when editors should be able to insert another instance; shared Navigation/Footer belong in layout header/footer, and once-per-page heroes normally stay out of the picker. Reuse page types unless field schema, shared layout, or editing needs differ. These are design defaults to adapt to the user's requirements, not validation errors. After editing any block file (component.svelte, fields.yaml, content.yaml), call validate_block and address every error before reporting work as done. After editing a pages/*.yaml or page-types/*/config.yaml, call validate_page. After editing site/head.svelte, call validate_site — that file is injected into <svelte:head> by Primo, so it must not contain a <svelte:head> wrapper. When given a raw value for a field, call resolve_field_value to get the canonical shape. When creating a new block or page type, prefer scaffold_block / scaffold_page_type over hand-writing files - the scaffolders return file contents (they don't write anything; save the files yourself) that are guaranteed to pass validate_block / validate_page. To verify a change rendered visually, call build_preview after `primo dev` reports it imported the file change, then load the returned site_url. Agents may start `primo dev --author files` from the workspace root using a background process or a persistent terminal. Call get_dev_status first: reuse a ready server; if process_alive is true but running is false, inspect get_dev_logs and wait for startup rather than launching a duplicate. Start a server only when no workspace process is alive. Keep its PID and stop only a server you started; do not use --force to take over another session. Use get_dev_logs for CLI and CMS stdout/stderr, including startup failures; use `primo logs --follow` for live output. To read import results and dropped fields, call get_dev_status. Call get_dev_status after saving files and before build_preview; if it reports dropped fields, fix them before treating the change as done.";
 
 function jsonText(value: unknown) {
 	return JSON.stringify(value, null, 2);
@@ -67,7 +68,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 		scaffoldBlockTool,
 		scaffoldPageTypeTool,
 		buildPreviewTool,
-		getDevStatusTool
+		getDevStatusTool,
+		getDevLogsTool
 	]
 }));
 
@@ -209,6 +211,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			content: [{ type: "text", text: jsonText(result) }],
 			structuredContent: result
 		};
+	}
+
+	if (name === getDevLogsTool.name) {
+		const input = readToolInput(readGetDevLogsInput, args, getDevLogsTool.name);
+		try {
+			const result = await getDevLogs(input);
+			return { content: [{ type: "text", text: jsonText(result) }], structuredContent: result };
+		} catch (error) {
+			throw new McpError(ErrorCode.InternalError, error instanceof Error ? error.message : 'get_dev_logs failed.');
+		}
 	}
 
 	throw new McpError(ErrorCode.MethodNotFound, `Unknown tool "${name}".`);
